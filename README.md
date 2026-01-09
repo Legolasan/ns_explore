@@ -4,7 +4,9 @@ A web-based tool for exploring the NetSuite SuiteTalk SDK (v2022.1) capabilities
 
 ## Features
 
+- **AI Support Assistant**: Natural language queries about SDK support powered by Claude AI
 - **Record Type Search**: Check if a record type is supported in the SDK
+- **Connector Coverage**: See which records/fields are actively used in the Hevo connector
 - **Field Explorer**: Browse all fields for any record type with data types
 - **Field Search**: Find which record types contain a specific field
 - **Live API Testing**: Test get/search operations against customer NetSuite instances
@@ -76,6 +78,16 @@ uvicorn backend.app.main:app --reload --port 8000
 | `POST /api/live/get-record` | Fetch a specific record |
 | `POST /api/live/search` | Search for records |
 
+### AI Chat
+
+| Endpoint | Description |
+|----------|-------------|
+| `GET /api/chat/status` | Check if AI chat is available |
+| `POST /api/chat` | Send a message, get AI response |
+| `GET /api/chat/session/{id}` | Get conversation history |
+| `DELETE /api/chat/session/{id}` | Clear conversation |
+| `GET /api/chat/suggestions` | Get suggested questions |
+
 ## Deployment (Railway)
 
 This project is configured for Railway deployment:
@@ -83,13 +95,31 @@ This project is configured for Railway deployment:
 1. Connect your GitHub repository to Railway
 2. Railway will auto-detect the Python project
 3. The app uses the `Procfile` for the start command
-4. Set environment variable `PORT` if needed (Railway sets this automatically)
+4. Set environment variables as needed (see below)
+
+### Environment Variables
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `PORT` | No | Server port (Railway sets automatically) |
+| `ANTHROPIC_API_KEY` | **Yes** for AI Chat | Your Anthropic Claude API key |
+| `DEBUG` | No | Enable debug mode (default: false) |
+
+#### Setting Up Claude AI Chat
+
+To enable the AI-powered support assistant:
+
+1. Get an API key from [Anthropic Console](https://console.anthropic.com/)
+2. In Railway dashboard, go to your service → Variables
+3. Add `ANTHROPIC_API_KEY` with your API key
+4. Redeploy the service
+
+Without this key, the app will work but the AI Chat feature will be disabled.
 
 ### Files for Deployment
 
 - `Procfile` - Defines the web process
 - `railway.json` - Railway-specific configuration
-- `nixpacks.toml` - Build configuration
 - `requirements.txt` - Python dependencies
 - `runtime.txt` - Python version
 
@@ -99,27 +129,41 @@ This project is configured for Railway deployment:
 netsuite-sdk-explorer/
 ├── backend/
 │   ├── app/
-│   │   ├── main.py              # FastAPI application
+│   │   ├── main.py               # FastAPI application
 │   │   ├── api/
-│   │   │   ├── records.py       # Record type endpoints
-│   │   │   ├── fields.py        # Field search endpoints
-│   │   │   └── live_test.py     # Live API endpoints
+│   │   │   ├── records.py        # Record type endpoints
+│   │   │   ├── fields.py         # Field search endpoints
+│   │   │   ├── live_test.py      # Live API endpoints
+│   │   │   └── chat.py           # AI chat endpoints
+│   │   ├── core/
+│   │   │   └── config.py         # Configuration management
 │   │   ├── services/
-│   │   │   ├── sdk_parser.py    # Java SDK parser
-│   │   │   ├── sdk_indexer.py   # Index builder
+│   │   │   ├── sdk_parser.py     # Java SDK parser
+│   │   │   ├── sdk_indexer.py    # SDK index builder
+│   │   │   ├── connector_parser.py # Hevo connector parser
+│   │   │   ├── field_indexer.py  # Field reverse index
+│   │   │   ├── claude_client.py  # Claude AI integration
 │   │   │   └── netsuite_client.py # SOAP client
 │   │   └── models/
-│   │       └── schemas.py       # Pydantic models
+│   │       └── schemas.py        # Pydantic models
 │   └── data/
-│       └── sdk_index.json       # Pre-built SDK index
+│       ├── sdk_index_*.json      # SDK indexes (per version)
+│       ├── connector_usage.json  # Connector usage data
+│       └── field_index.json      # Field reverse index
 ├── frontend/
-│   ├── index.html
-│   ├── styles.css
-│   └── app.js
+│   ├── index.html                # Main explorer UI
+│   ├── styles.css                # Explorer styles
+│   ├── app.js                    # Explorer logic
+│   ├── chat.html                 # AI chat UI
+│   ├── chat.css                  # Chat styles
+│   └── chat.js                   # Chat logic
 ├── scripts/
-│   └── build_index.py           # Index generation script
+│   └── build_all_indexes.py      # Index generation script
+├── sdk/
+│   └── 2022.1/                   # SDK source files
 ├── requirements.txt
 ├── Procfile
+├── railway.json
 └── README.md
 ```
 

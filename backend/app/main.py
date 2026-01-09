@@ -13,9 +13,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse
 
-from .api import records, fields, live_test
+from .api import records, fields, live_test, chat
 from .services.sdk_indexer import SDKIndexer, MultiVersionIndexer
 from .services.connector_parser import ConnectorIndexer
+from .services.field_indexer import FieldIndexer, set_field_indexer
+from .services.claude_client import init_claude_client
 
 
 # Determine paths - handle both local and Docker environments
@@ -64,6 +66,9 @@ _multi_indexer: Optional[MultiVersionIndexer] = None
 # Global connector indexer
 _connector_indexer: Optional[ConnectorIndexer] = None
 
+# Global field indexer
+_field_indexer: Optional[FieldIndexer] = None
+
 
 def get_multi_indexer() -> MultiVersionIndexer:
     """Get the multi-version indexer"""
@@ -76,7 +81,7 @@ def get_multi_indexer() -> MultiVersionIndexer:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan - load SDK indexes on startup"""
-    global _multi_indexer, _connector_indexer
+    global _multi_indexer, _connector_indexer, _field_indexer
     
     data_dir = PATHS["data_dir"]
     sdk_dir = PATHS["sdk_dir"]
@@ -94,6 +99,7 @@ async def lifespan(app: FastAPI):
     indexers = _multi_indexer.load_all_indexes()
     versions = _multi_indexer.get_versions()
     
+    default_indexer = None
     if versions:
         print(f"Loaded SDK versions: {', '.join(versions)}")
         # Set default version for backward compatibility
@@ -125,6 +131,32 @@ async def lifespan(app: FastAPI):
             print("WARNING: Failed to load connector usage index")
     else:
         print("INFO: Connector usage index not found (optional)")
+    
+    # Load field index
+    field_index_path = data_dir / "field_index.json"
+    if field_index_path.exists():
+        print(f"Loading field index from: {field_index_path}")
+        _field_indexer = FieldIndexer(data_dir=str(data_dir))
+        field_index = _field_indexer.load_index()
+        if field_index:
+            print(f"Field index loaded: {field_index.total_unique_fields} unique fields")
+            set_field_indexer(_field_indexer)
+        else:
+            print("WARNING: Failed to load field index")
+    else:
+        print("INFO: Field index not found (will be created on first build)")
+    
+    # Initialize Claude client for AI chat
+    print("Initializing Claude AI client...")
+    claude_client = init_claude_client(
+        sdk_indexer=default_indexer,
+        connector_indexer=_connector_indexer,
+        field_indexer=_field_indexer
+    )
+    if claude_client.is_available():
+        print("Claude AI client initialized successfully")
+    else:
+        print("INFO: Claude AI not configured (set ANTHROPIC_API_KEY to enable)")
     
     yield
     
@@ -174,6 +206,7 @@ app.add_middleware(
 app.include_router(records.router, prefix="/api")
 app.include_router(fields.router, prefix="/api")
 app.include_router(live_test.router, prefix="/api")
+app.include_router(chat.router, prefix="/api")
 
 
 # Version management endpoints
@@ -223,6 +256,7 @@ async def api_root():
             "records": "/api/records",
             "fields": "/api/fields",
             "live": "/api/live",
+            "chat": "/api/chat",
             "docs": "/docs"
         }
     }
@@ -328,6 +362,40 @@ async def serve_js():
     if js_path.exists():
         return FileResponse(str(js_path), media_type="application/javascript")
     return JSONResponse(status_code=404, content={"error": "JS not found", "path": str(js_path)})
+
+
+# Chat page routes
+@app.get("/chat")
+async def serve_chat_page():
+    """Serve the chat page"""
+    frontend_dir = PATHS["frontend_dir"]
+    chat_path = frontend_dir / "chat.html"
+    
+    if chat_path.exists():
+        return FileResponse(str(chat_path))
+    
+    return JSONResponse(
+        status_code=404,
+        content={"error": "Chat page not found", "path": str(chat_path)}
+    )
+
+
+@app.get("/chat.js")
+async def serve_chat_js():
+    """Serve chat JavaScript file"""
+    js_path = PATHS["frontend_dir"] / "chat.js"
+    if js_path.exists():
+        return FileResponse(str(js_path), media_type="application/javascript")
+    return JSONResponse(status_code=404, content={"error": "Chat JS not found"})
+
+
+@app.get("/chat.css")
+async def serve_chat_css():
+    """Serve chat CSS file"""
+    css_path = PATHS["frontend_dir"] / "chat.css"
+    if css_path.exists():
+        return FileResponse(str(css_path), media_type="text/css")
+    return JSONResponse(status_code=404, content={"error": "Chat CSS not found"})
 
 
 # Health check for Railway deployment

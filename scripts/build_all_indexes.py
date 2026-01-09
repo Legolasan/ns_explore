@@ -15,6 +15,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 from backend.app.services.sdk_indexer import MultiVersionIndexer
 from backend.app.services.connector_parser import ConnectorIndexer
+from backend.app.services.field_indexer import FieldIndexer
 
 
 def build_sdk_indexes(project_root: str, sdk_base_path: str, data_path: str) -> dict:
@@ -45,6 +46,33 @@ def build_sdk_indexes(project_root: str, sdk_base_path: str, data_path: str) -> 
     
     indexes = indexer.build_all_indexes()
     return indexes
+
+
+def build_field_index(data_path: str, sdk_index: dict, connector_index: dict = None) -> dict:
+    """Build reverse field index from SDK and connector indexes."""
+    print()
+    print("="*60)
+    print("Field-to-Record Reverse Index")
+    print("="*60)
+    
+    if not sdk_index:
+        print("WARNING: No SDK index provided. Skipping field index.")
+        return None
+    
+    try:
+        indexer = FieldIndexer(data_dir=data_path)
+        
+        # Convert SDK index to dict format if needed
+        sdk_dict = sdk_index.model_dump() if hasattr(sdk_index, 'model_dump') else sdk_index
+        conn_dict = connector_index.to_dict() if connector_index and hasattr(connector_index, 'to_dict') else connector_index
+        
+        field_index = indexer.build_index(sdk_dict, conn_dict, save=True)
+        return field_index
+    except Exception as e:
+        print(f"WARNING: Failed to build field index: {e}")
+        import traceback
+        traceback.print_exc()
+        return None
 
 
 def build_connector_index(project_root: str, data_path: str, sdk_record_count: int = 191) -> dict:
@@ -115,6 +143,10 @@ def main():
     # Build connector usage index
     connector_index = build_connector_index(project_root, data_path, sdk_record_count)
     
+    # Build field reverse index (uses SDK and connector indexes)
+    default_sdk_index = list(sdk_indexes.values())[0] if sdk_indexes else None
+    field_index = build_field_index(data_path, default_sdk_index, connector_index)
+    
     # Print summary
     print("\n" + "="*60)
     print("BUILD SUMMARY")
@@ -141,6 +173,13 @@ def main():
         print(f"  - Standard Types: {stats.get('categories', {}).get('standard', 0)}")
     else:
         print("\nConnector Usage: Not available (connector source not found)")
+    
+    if field_index:
+        print("\nField Index:")
+        print(f"  - Unique Fields: {field_index.total_unique_fields}")
+        print(f"  - Total Occurrences: {field_index.total_field_occurrences}")
+    else:
+        print("\nField Index: Not available")
     
     print(f"\nIndex files saved to: {data_path}")
     print("Build complete!")
