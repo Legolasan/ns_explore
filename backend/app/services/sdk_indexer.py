@@ -272,9 +272,17 @@ class SDKIndexer:
         return results
     
     def get_record_type(self, name: str) -> Optional[RecordTypeInfo]:
-        """Get details for a specific record type"""
+        """Get details for a specific record type (case-insensitive lookup)"""
         index = self.get_index()
-        return index.record_types.get(name)
+        # Try exact match first
+        if name in index.record_types:
+            return index.record_types[name]
+        # Try case-insensitive match
+        name_lower = name.lower()
+        for key, value in index.record_types.items():
+            if key.lower() == name_lower:
+                return value
+        return None
     
     def get_enum_values(self, enum_name: str) -> Optional[List[str]]:
         """Get values for a specific enum type"""
