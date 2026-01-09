@@ -1,1 +1,1 @@
-web: gunicorn backend.app.main:app --workers 2 --worker-class uvicorn.workers.UvicornWorker --bind 0.0.0.0:$PORT
+web: /app/venv/bin/gunicorn backend.app.main:app --workers 2 --worker-class uvicorn.workers.UvicornWorker --bind 0.0.0.0:$PORT
