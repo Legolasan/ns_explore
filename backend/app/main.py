@@ -15,6 +15,7 @@ from fastapi.responses import FileResponse, JSONResponse
 
 from .api import records, fields, live_test
 from .services.sdk_indexer import SDKIndexer, MultiVersionIndexer
+from .services.connector_parser import ConnectorIndexer
 
 
 # Determine paths - handle both local and Docker environments
@@ -60,6 +61,9 @@ print("==========================")
 # Global multi-version indexer
 _multi_indexer: Optional[MultiVersionIndexer] = None
 
+# Global connector indexer
+_connector_indexer: Optional[ConnectorIndexer] = None
+
 
 def get_multi_indexer() -> MultiVersionIndexer:
     """Get the multi-version indexer"""
@@ -72,10 +76,11 @@ def get_multi_indexer() -> MultiVersionIndexer:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan - load SDK indexes on startup"""
-    global _multi_indexer
+    global _multi_indexer, _connector_indexer
     
     data_dir = PATHS["data_dir"]
     sdk_dir = PATHS["sdk_dir"]
+    project_root = PATHS["project_root"]
     
     print(f"Loading SDK indexes from: {data_dir}")
     
@@ -101,6 +106,25 @@ async def lifespan(app: FastAPI):
     else:
         print("WARNING: No SDK indexes found!")
         print("Run: python scripts/build_all_indexes.py to generate indexes")
+    
+    # Load connector usage index
+    connector_usage_path = data_dir / "connector_usage.json"
+    if connector_usage_path.exists():
+        print(f"Loading connector usage index from: {connector_usage_path}")
+        # ConnectorIndexer expects a connector path, but we just need to load the index
+        # So we pass a dummy path and load directly
+        _connector_indexer = ConnectorIndexer(
+            connector_path=str(project_root / "erp"),  # Connector source path
+            index_dir=str(data_dir)
+        )
+        loaded_index = _connector_indexer.load_index()
+        if loaded_index:
+            print(f"Connector usage loaded: {loaded_index.coverage_stats.get('connector_records', 0)} records")
+            records.set_connector_indexer(_connector_indexer)
+        else:
+            print("WARNING: Failed to load connector usage index")
+    else:
+        print("INFO: Connector usage index not found (optional)")
     
     yield
     

@@ -5,12 +5,16 @@ from typing import List, Optional, Callable
 from fastapi import APIRouter, HTTPException, Query
 
 from ..services.sdk_indexer import SDKIndexer
+from ..services.connector_parser import ConnectorIndexer, get_connector_indexer
 from ..models.schemas import RecordTypeInfo, SearchResult
 
 router = APIRouter(prefix="/records", tags=["records"])
 
 # Initialize indexer (will be properly configured in main.py)
 _indexer: Optional[SDKIndexer] = None
+
+# Connector indexer (will be configured in main.py)
+_connector_indexer: Optional[ConnectorIndexer] = None
 
 # Function to get versioned indexer (set by main.py)
 get_versioned_indexer: Optional[Callable[[Optional[str]], SDKIndexer]] = None
@@ -37,6 +41,21 @@ def set_indexer(indexer: SDKIndexer):
     """Set the SDK indexer instance (for backward compatibility)"""
     global _indexer
     _indexer = indexer
+
+
+def set_connector_indexer(indexer: ConnectorIndexer):
+    """Set the connector indexer instance"""
+    global _connector_indexer
+    _connector_indexer = indexer
+
+
+def get_connector_index():
+    """Get the connector indexer instance"""
+    global _connector_indexer
+    if _connector_indexer is None:
+        # Try to get from global
+        return get_connector_indexer()
+    return _connector_indexer
 
 
 @router.get("", response_model=dict)
@@ -270,3 +289,102 @@ async def get_record_fields(
         fields = [f for f in fields if search_lower in f.name.lower()]
     
     return [f.model_dump() for f in fields]
+
+
+@router.get("/{record_type}/connector-usage", response_model=dict)
+async def get_connector_usage(
+    record_type: str,
+    version: Optional[str] = Query(None, description="SDK version (defaults to latest)")
+):
+    """
+    Get Hevo connector usage information for a specific record type.
+    
+    Returns details about whether this record type is used in the Hevo NetSuite connector,
+    which fields are extracted, load type, and other connector-specific information.
+    """
+    # First verify the record exists in SDK
+    indexer = get_indexer(version)
+    index = indexer.get_index()
+    record_info = indexer.get_record_type(record_type.lower())
+    
+    if not record_info:
+        raise HTTPException(
+            status_code=404, 
+            detail=f"Record type '{record_type}' not found in SDK version {index.version}"
+        )
+    
+    # Get connector usage info
+    connector_indexer = get_connector_index()
+    
+    if connector_indexer is None:
+        return {
+            "sdk_version": index.version,
+            "record_name": record_info.name,
+            "used_in_connector": False,
+            "message": "Connector usage data not available"
+        }
+    
+    usage = connector_indexer.get_record_usage(record_info.name)
+    
+    if usage is None:
+        return {
+            "sdk_version": index.version,
+            "record_name": record_info.name,
+            "used_in_connector": False,
+            "message": f"Record type '{record_info.name}' is NOT used in the Hevo connector",
+            "total_sdk_fields": record_info.field_count,
+            "fields_extracted": 0
+        }
+    
+    # Calculate field coverage
+    sdk_field_names = {f.name.lower() for f in record_info.fields}
+    connector_fields = usage.get("fields_extracted", [])
+    matched_fields = [f for f in connector_fields if f.lower() in sdk_field_names or f == "_class"]
+    
+    return {
+        "sdk_version": index.version,
+        "record_name": record_info.name,
+        "used_in_connector": True,
+        "category": usage.get("category"),
+        "load_type": usage.get("load_type"),
+        "sdk_class": usage.get("sdk_class"),
+        "search_class": usage.get("search_class"),
+        "total_sdk_fields": record_info.field_count,
+        "fields_extracted": len(connector_fields),
+        "field_coverage_percent": round((len(connector_fields) / record_info.field_count) * 100, 1) if record_info.field_count > 0 else 0,
+        "extracted_field_names": connector_fields,
+        "source_file": usage.get("source_file")
+    }
+
+
+@router.get("/connector/stats", response_model=dict)
+async def get_connector_stats():
+    """
+    Get overall connector usage statistics.
+    
+    Returns summary of how many SDK record types are used in the Hevo connector.
+    """
+    connector_indexer = get_connector_index()
+    
+    if connector_indexer is None:
+        return {
+            "available": False,
+            "message": "Connector usage data not available"
+        }
+    
+    index = connector_indexer.get_index()
+    
+    if index is None:
+        return {
+            "available": False,
+            "message": "Connector usage index not loaded"
+        }
+    
+    return {
+        "available": True,
+        "total_sdk_records": index.coverage_stats.get("total_sdk_records", 0),
+        "connector_records": index.coverage_stats.get("connector_records", 0),
+        "coverage_percent": index.coverage_stats.get("coverage_percent", 0),
+        "categories": index.coverage_stats.get("categories", {}),
+        "used_record_names": list(index.record_types.keys())
+    }

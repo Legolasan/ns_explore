@@ -15,6 +15,8 @@ let allRecords = [];
 let categories = [];
 let currentVersion = null;  // Currently selected SDK version
 let availableVersions = []; // All available SDK versions
+let connectorStats = null;  // Connector usage statistics
+let connectorRecords = new Set(); // Set of record names used in connector
 
 // DOM Elements
 const elements = {
@@ -60,10 +62,27 @@ const elements = {
 document.addEventListener('DOMContentLoaded', () => {
     initTabs();
     loadVersions();  // Load versions first, then stats and records
+    loadConnectorStats(); // Load connector usage stats
     initSearchHandlers();
     initLiveAPIHandlers();
     initVersionSelector();
 });
+
+// Load connector usage statistics
+async function loadConnectorStats() {
+    try {
+        const response = await fetch(`${API_BASE}/records/connector/stats`);
+        const data = await response.json();
+        
+        if (data.available) {
+            connectorStats = data;
+            connectorRecords = new Set(data.used_record_names || []);
+            console.log(`Connector stats loaded: ${connectorStats.connector_records} records used`);
+        }
+    } catch (error) {
+        console.log('Connector stats not available:', error);
+    }
+}
 
 // Version Selector
 function initVersionSelector() {
@@ -283,12 +302,19 @@ function renderRecordList(records) {
                </div>`
             : '';
         
+        // Check if record is used in connector
+        const isInConnector = connectorRecords.has(record.name) || connectorRecords.has(record.class_name);
+        const connectorBadge = isInConnector 
+            ? '<span class="badge badge-connector" title="Used in Hevo Connector">Hevo</span>'
+            : '';
+        
         return `
             <div class="record-item ${selectedRecord === record.name ? 'active' : ''}" 
                  data-record="${record.name}">
                 <div class="record-item-header">
                     <span class="record-name">${record.name}</span>
                     <span class="badge badge-category">${record.category}</span>
+                    ${connectorBadge}
                 </div>
                 <div class="record-meta">
                     <span>📋 ${record.field_count} fields</span>
@@ -347,6 +373,12 @@ function renderRecordDetail(record) {
         renderFieldGroup('Custom/Other Fields', fieldGroups.custom_fields, 'custom'),
     ].filter(Boolean).join('');
     
+    // Check if record is used in connector
+    const isInConnector = connectorRecords.has(record.name) || connectorRecords.has(record.class_name);
+    const connectorBadge = isInConnector 
+        ? '<span class="badge badge-connector">Used in Hevo Connector</span>'
+        : '';
+    
     const html = `
         <div class="detail-header">
             <div class="detail-title">${record.name}</div>
@@ -356,14 +388,145 @@ function renderRecordDetail(record) {
                 <span class="badge badge-category">${record.category}</span>
                 <span class="badge" style="background: var(--bg-tertiary);">${record.field_count} fields</span>
                 ${record.has_search ? '<span class="badge badge-search">searchable</span>' : ''}
+                ${connectorBadge}
             </div>
         </div>
-        <div class="detail-body">
-            ${groupsHtml}
+        
+        <!-- Detail Tabs -->
+        <div class="detail-tabs">
+            <button class="detail-tab active" data-detail-tab="fields">Fields</button>
+            <button class="detail-tab" data-detail-tab="connector">Connector Usage</button>
+        </div>
+        
+        <!-- Fields Tab Content -->
+        <div class="detail-tab-content active" id="detail-fields-tab">
+            <div class="detail-body">
+                ${groupsHtml}
+            </div>
+        </div>
+        
+        <!-- Connector Tab Content -->
+        <div class="detail-tab-content" id="detail-connector-tab">
+            <div class="connector-loading">Loading connector usage...</div>
         </div>
     `;
     
     elements.recordDetail.innerHTML = html;
+    
+    // Initialize detail tabs
+    initDetailTabs(record.name);
+}
+
+// Initialize tabs within the record detail panel
+function initDetailTabs(recordName) {
+    const tabs = elements.recordDetail.querySelectorAll('.detail-tab');
+    const contents = elements.recordDetail.querySelectorAll('.detail-tab-content');
+    
+    tabs.forEach(tab => {
+        tab.addEventListener('click', () => {
+            const tabId = tab.dataset.detailTab;
+            
+            // Update active states
+            tabs.forEach(t => t.classList.remove('active'));
+            contents.forEach(c => c.classList.remove('active'));
+            
+            tab.classList.add('active');
+            const targetContent = elements.recordDetail.querySelector(`#detail-${tabId}-tab`);
+            if (targetContent) {
+                targetContent.classList.add('active');
+            }
+            
+            // Load connector usage when tab is clicked
+            if (tabId === 'connector') {
+                loadConnectorUsage(recordName);
+            }
+        });
+    });
+}
+
+// Load connector usage for a specific record
+async function loadConnectorUsage(recordName) {
+    const connectorTab = elements.recordDetail.querySelector('#detail-connector-tab');
+    if (!connectorTab) return;
+    
+    connectorTab.innerHTML = '<div class="connector-loading">Loading connector usage...</div>';
+    
+    try {
+        const response = await fetch(apiUrl(`/records/${recordName}/connector-usage`));
+        const usage = await response.json();
+        
+        renderConnectorUsage(usage, connectorTab);
+    } catch (error) {
+        console.error('Failed to load connector usage:', error);
+        connectorTab.innerHTML = `
+            <div class="connector-error">
+                Failed to load connector usage information
+            </div>
+        `;
+    }
+}
+
+// Render connector usage information
+function renderConnectorUsage(usage, container) {
+    if (!usage.used_in_connector) {
+        container.innerHTML = `
+            <div class="connector-not-used">
+                <div class="connector-status-icon">✗</div>
+                <h4>Not Used in Hevo Connector</h4>
+                <p>${usage.message || 'This record type is not currently used in the Hevo NetSuite connector.'}</p>
+                <p class="connector-note">Total SDK fields: ${usage.total_sdk_fields || 0}</p>
+            </div>
+        `;
+        return;
+    }
+    
+    // Calculate field list
+    const fieldsList = (usage.extracted_field_names || []).map(f => 
+        `<span class="connector-field">${f}</span>`
+    ).join('');
+    
+    container.innerHTML = `
+        <div class="connector-used">
+            <div class="connector-status">
+                <span class="connector-status-icon success">✓</span>
+                <span class="connector-status-text">Used in Hevo Connector</span>
+            </div>
+            
+            <div class="connector-info-grid">
+                <div class="connector-info-item">
+                    <span class="connector-info-label">Load Type</span>
+                    <span class="connector-info-value badge-${usage.load_type}">${usage.load_type === 'incremental' ? 'Incremental' : 'Full Load'}</span>
+                </div>
+                <div class="connector-info-item">
+                    <span class="connector-info-label">Category</span>
+                    <span class="connector-info-value">${usage.category || 'N/A'}</span>
+                </div>
+                <div class="connector-info-item">
+                    <span class="connector-info-label">SDK Class</span>
+                    <span class="connector-info-value code">${usage.sdk_class || 'N/A'}</span>
+                </div>
+                <div class="connector-info-item">
+                    <span class="connector-info-label">Search Class</span>
+                    <span class="connector-info-value code">${usage.search_class || 'N/A'}</span>
+                </div>
+            </div>
+            
+            <div class="connector-fields-section">
+                <div class="connector-fields-header">
+                    <h4>Fields Extracted (${usage.fields_extracted} of ${usage.total_sdk_fields})</h4>
+                    <span class="connector-coverage">${usage.field_coverage_percent}% coverage</span>
+                </div>
+                <div class="connector-fields-list">
+                    ${fieldsList || '<span class="connector-no-fields">No field mapping available</span>'}
+                </div>
+            </div>
+            
+            <div class="connector-source">
+                <span class="connector-source-label">Source:</span>
+                <span class="connector-source-file">${usage.source_file || 'N/A'}</span>
+            </div>
+        </div>
+    `;
 }
 
 function renderFieldGroup(title, fields, type) {
