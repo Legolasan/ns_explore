@@ -1,15 +1,11 @@
 [phases.setup]
-nixPkgs = ["python311"]
+nixPkgs = ["python311", "python311Packages.pip", "python311Packages.gunicorn", "python311Packages.uvicorn"]
 
 [phases.install]
 cmds = [
-    "python -m venv /app/venv",
-    "/app/venv/bin/pip install --upgrade pip",
-    "/app/venv/bin/pip install -r requirements.txt"
+    "python -m venv --system-site-packages .venv",
+    ".venv/bin/pip install -r requirements.txt"
 ]
 
-[phases.build]
-cmds = ["echo 'Build complete'"]
-
 [start]
-cmd = "/app/venv/bin/gunicorn backend.app.main:app --workers 2 --worker-class uvicorn.workers.UvicornWorker --bind 0.0.0.0:$PORT"
+cmd = ".venv/bin/python -m gunicorn backend.app.main:app --workers 2 --worker-class uvicorn.workers.UvicornWorker --bind 0.0.0.0:$PORT"
