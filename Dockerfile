@@ -15,5 +15,5 @@ ENV PORT=8080
 # Expose port
 EXPOSE 8080
 
-# Use shell form so $PORT gets expanded
-CMD uvicorn backend.app.main:app --host 0.0.0.0 --port $PORT
+# Use explicit shell to expand $PORT
+CMD ["/bin/sh", "-c", "uvicorn backend.app.main:app --host 0.0.0.0 --port ${PORT}"]
