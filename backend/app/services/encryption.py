@@ -101,7 +101,11 @@ class EncryptionService:
         """
         Decrypt sensitive fields in a credentials dictionary.
         
-        Expects fields to be prefixed with 'enc:' if encrypted.
+        Sensitive fields (consumer_secret, token_secret) are expected to be:
+        - Plain text 64-char hex strings, OR
+        - XOR+Base64 encrypted strings (longer, ~92 chars)
+        
+        We try to decrypt if it doesn't look like a plain 64-char hex string.
         """
         result = credentials.copy()
         
@@ -110,14 +114,23 @@ class EncryptionService:
         for field in sensitive_fields:
             if field in result and result[field]:
                 value = result[field]
+                
                 # Check if value is encrypted (prefixed with 'enc:')
                 if value.startswith('enc:'):
                     result[field] = self.decrypt(value[4:])
-                # If not prefixed, might be XOR encoded or plain text
-                elif len(value) > 100:  # Likely base64 encoded (encrypted values are longer)
+                # Check if it looks like a plain 64-char hex string
+                elif len(value) == 64 and all(c in '0123456789abcdefABCDEF' for c in value):
+                    # Already plain text, keep as-is
+                    pass
+                else:
+                    # Try XOR decryption (encrypted values are ~92 chars base64)
                     try:
-                        result[field] = self._xor_decrypt(value)
-                    except:
+                        decrypted = self._xor_decrypt(value)
+                        # Verify decrypted value looks like a valid hex string
+                        if len(decrypted) == 64 and all(c in '0123456789abcdefABCDEF' for c in decrypted):
+                            result[field] = decrypted
+                        # Otherwise keep original value
+                    except Exception:
                         pass  # Keep original value
         
         return result
