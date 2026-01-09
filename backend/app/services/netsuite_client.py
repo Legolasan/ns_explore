@@ -165,6 +165,19 @@ class NetSuiteClient:
             }
         }
     
+    def _get_service_url(self) -> str:
+        """Get the SOAP service endpoint URL (where requests are sent)"""
+        if self.soap_endpoint:
+            endpoint = self.soap_endpoint.rstrip('/')
+            return f"{endpoint}/services/NetSuitePort_2022_1"
+        
+        if self._discovered_endpoint:
+            return f"{self._discovered_endpoint}/services/NetSuitePort_2022_1"
+        
+        # Fall back to default
+        account_url = self.account_id.lower().replace("_", "-")
+        return f"https://{account_url}.suitetalk.api.netsuite.com/services/NetSuitePort_2022_1"
+    
     def _get_client(self):
         """Get or create the SOAP client"""
         if not ZEEP_AVAILABLE:
@@ -191,6 +204,16 @@ class NetSuiteClient:
                     plugins=[self._history]
                 )
                 print("WSDL loaded successfully")
+                
+                # CRITICAL: Override the service address with account-specific endpoint
+                # The WSDL contains a generic endpoint that won't work for accounts
+                # requiring account-specific domains
+                service_url = self._get_service_url()
+                print(f"Using service endpoint: {service_url}")
+                
+                # Create a new service binding with the correct endpoint
+                self._client.service._binding_options['address'] = service_url
+                
             except Exception as e:
                 print(f"Failed to create SOAP client: {e}")
                 raise
