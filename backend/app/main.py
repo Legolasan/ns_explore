@@ -6,35 +6,72 @@ checking record type support, browsing fields, and testing live API calls.
 """
 import os
 from contextlib import asynccontextmanager
+from pathlib import Path
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 
 from .api import records, fields, live_test
 from .services.sdk_indexer import SDKIndexer
 
 
-# Determine paths
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-DATA_DIR = os.path.join(BASE_DIR, "data")
-FRONTEND_DIR = os.path.join(os.path.dirname(BASE_DIR), "frontend")
-INDEX_PATH = os.path.join(DATA_DIR, "sdk_index.json")
+# Determine paths - handle both local and Docker environments
+def get_paths():
+    """Get paths that work in both local and Docker environments"""
+    # Try to find the app root directory
+    current_file = Path(__file__).resolve()
+    
+    # backend/app/main.py -> backend/app -> backend -> project_root
+    app_dir = current_file.parent  # backend/app
+    backend_dir = app_dir.parent   # backend
+    project_root = backend_dir.parent  # project root (netsuite-sdk-explorer)
+    
+    # If running in Docker, /app is the project root
+    docker_root = Path("/app")
+    if docker_root.exists() and (docker_root / "backend").exists():
+        project_root = docker_root
+        backend_dir = docker_root / "backend"
+    
+    data_dir = backend_dir / "data"
+    frontend_dir = project_root / "frontend"
+    index_path = data_dir / "sdk_index.json"
+    
+    return {
+        "project_root": project_root,
+        "backend_dir": backend_dir,
+        "data_dir": data_dir,
+        "frontend_dir": frontend_dir,
+        "index_path": index_path,
+    }
+
+
+PATHS = get_paths()
+
+print(f"=== Path Configuration ===")
+print(f"Project root: {PATHS['project_root']}")
+print(f"Backend dir: {PATHS['backend_dir']}")
+print(f"Data dir: {PATHS['data_dir']}")
+print(f"Frontend dir: {PATHS['frontend_dir']}")
+print(f"Index path: {PATHS['index_path']}")
+print(f"Index exists: {PATHS['index_path'].exists()}")
+print(f"Frontend exists: {PATHS['frontend_dir'].exists()}")
+print("==========================")
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan - load SDK index on startup"""
-    # Load the SDK index
-    print(f"Loading SDK index from: {INDEX_PATH}")
+    index_path = PATHS["index_path"]
+    print(f"Loading SDK index from: {index_path}")
     
-    if os.path.exists(INDEX_PATH):
-        indexer = SDKIndexer(sdk_path="", index_path=INDEX_PATH)
+    if index_path.exists():
+        indexer = SDKIndexer(sdk_path="", index_path=str(index_path))
         indexer.load_index()
         records.set_indexer(indexer)
         print(f"SDK index loaded: {indexer.get_index().total_records} record types")
     else:
-        print(f"WARNING: SDK index not found at {INDEX_PATH}")
+        print(f"WARNING: SDK index not found at {index_path}")
         print("Run: python scripts/build_index.py to generate the index")
     
     yield
@@ -100,42 +137,68 @@ async def api_root():
 @app.get("/api/stats")
 async def get_stats():
     """Get SDK statistics"""
-    indexer = records.get_indexer()
-    index = indexer.get_index()
-    
-    return {
-        "sdk_version": index.version,
-        "total_record_types": index.total_records,
-        "total_fields": index.total_fields,
-        "total_enum_types": len(index.enum_types),
-        "categories": indexer.get_all_categories()
-    }
+    try:
+        indexer = records.get_indexer()
+        if indexer is None:
+            return JSONResponse(
+                status_code=503,
+                content={"error": "SDK index not loaded"}
+            )
+        index = indexer.get_index()
+        
+        return {
+            "sdk_version": index.version,
+            "total_record_types": index.total_records,
+            "total_fields": index.total_fields,
+            "total_enum_types": len(index.enum_types),
+            "categories": indexer.get_all_categories()
+        }
+    except Exception as e:
+        return JSONResponse(
+            status_code=500,
+            content={"error": str(e)}
+        )
 
 
 # Serve frontend static files
 @app.get("/")
 async def serve_frontend():
     """Serve the frontend application"""
-    index_path = os.path.join(FRONTEND_DIR, "index.html")
-    if os.path.exists(index_path):
-        return FileResponse(index_path)
-    return {"message": "NetSuite SDK Explorer API", "api_docs": "/docs"}
+    frontend_dir = PATHS["frontend_dir"]
+    index_path = frontend_dir / "index.html"
+    
+    if index_path.exists():
+        return FileResponse(str(index_path))
+    
+    return JSONResponse(
+        content={
+            "message": "NetSuite SDK Explorer API",
+            "api_docs": "/docs",
+            "debug": {
+                "frontend_dir": str(frontend_dir),
+                "frontend_exists": frontend_dir.exists(),
+                "index_html_exists": index_path.exists(),
+            }
+        }
+    )
+
 
 @app.get("/styles.css")
 async def serve_styles():
     """Serve CSS file"""
-    css_path = os.path.join(FRONTEND_DIR, "styles.css")
-    if os.path.exists(css_path):
-        return FileResponse(css_path, media_type="text/css")
-    return {"error": "CSS not found"}
+    css_path = PATHS["frontend_dir"] / "styles.css"
+    if css_path.exists():
+        return FileResponse(str(css_path), media_type="text/css")
+    return JSONResponse(status_code=404, content={"error": "CSS not found", "path": str(css_path)})
+
 
 @app.get("/app.js")
 async def serve_js():
     """Serve JavaScript file"""
-    js_path = os.path.join(FRONTEND_DIR, "app.js")
-    if os.path.exists(js_path):
-        return FileResponse(js_path, media_type="application/javascript")
-    return {"error": "JS not found"}
+    js_path = PATHS["frontend_dir"] / "app.js"
+    if js_path.exists():
+        return FileResponse(str(js_path), media_type="application/javascript")
+    return JSONResponse(status_code=404, content={"error": "JS not found", "path": str(js_path)})
 
 
 # Health check for Railway deployment
@@ -143,6 +206,32 @@ async def serve_js():
 async def health_check():
     """Health check endpoint for deployment platforms"""
     return {"status": "healthy", "service": "netsuite-sdk-explorer"}
+
+
+# Debug endpoint to check paths
+@app.get("/debug/paths")
+async def debug_paths():
+    """Debug endpoint to check path configuration"""
+    frontend_dir = PATHS["frontend_dir"]
+    data_dir = PATHS["data_dir"]
+    
+    frontend_files = []
+    if frontend_dir.exists():
+        frontend_files = [f.name for f in frontend_dir.iterdir()]
+    
+    data_files = []
+    if data_dir.exists():
+        data_files = [f.name for f in data_dir.iterdir()]
+    
+    return {
+        "paths": {k: str(v) for k, v in PATHS.items()},
+        "frontend_exists": frontend_dir.exists(),
+        "frontend_files": frontend_files,
+        "data_exists": data_dir.exists(),
+        "data_files": data_files,
+        "index_exists": PATHS["index_path"].exists(),
+        "cwd": os.getcwd(),
+    }
 
 
 if __name__ == "__main__":
