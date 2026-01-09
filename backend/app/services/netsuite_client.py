@@ -408,9 +408,16 @@ class NetSuiteClient:
                 _soapheaders={"tokenPassport": passport}
             )
             
-            if hasattr(response, 'status') and response.status.isSuccess:
+            # Handle response - might be nested under body.readResponse
+            read_response = response
+            if hasattr(response, 'body') and hasattr(response.body, 'readResponse'):
+                read_response = response.body.readResponse
+            
+            # Check for success
+            if hasattr(read_response, 'status') and read_response.status.isSuccess:
                 # Convert response to dict
-                record_data = self._serialize_response(response.record)
+                record = read_response.record if hasattr(read_response, 'record') else None
+                record_data = self._serialize_response(record) if record else {}
                 return LiveAPIResponse(
                     success=True,
                     message=f"Successfully retrieved {record_type}",
@@ -418,10 +425,10 @@ class NetSuiteClient:
                 )
             else:
                 error_msg = "Unknown error"
-                if hasattr(response, 'status') and hasattr(response.status, 'statusDetail'):
-                    details = response.status.statusDetail
-                    if details:
-                        error_msg = str(details[0].message if hasattr(details[0], 'message') else details)
+                status = read_response.status if hasattr(read_response, 'status') else None
+                if status and hasattr(status, 'statusDetail') and status.statusDetail:
+                    details = status.statusDetail
+                    error_msg = str(details[0].message if hasattr(details[0], 'message') else details)
                 
                 return LiveAPIResponse(
                     success=False,
@@ -509,29 +516,39 @@ class NetSuiteClient:
                 }
             )
             
-            if hasattr(response, 'status') and response.status.isSuccess:
+            # Handle response - might be nested under body.searchResult
+            search_result = response
+            if hasattr(response, 'body') and hasattr(response.body, 'searchResult'):
+                search_result = response.body.searchResult
+            
+            if hasattr(search_result, 'status') and search_result.status.isSuccess:
                 # Extract records
                 records = []
-                if hasattr(response, 'recordList') and response.recordList:
-                    for record in response.recordList.record:
-                        records.append(self._serialize_response(record))
+                total_records = getattr(search_result, 'totalRecords', 0)
+                total_pages = getattr(search_result, 'totalPages', 0)
+                
+                if hasattr(search_result, 'recordList') and search_result.recordList:
+                    record_list = search_result.recordList
+                    if hasattr(record_list, 'record') and record_list.record:
+                        for record in record_list.record:
+                            records.append(self._serialize_response(record))
                 
                 return LiveAPIResponse(
                     success=True,
-                    message=f"Found {response.totalRecords} records",
+                    message=f"Found {total_records} records",
                     data={
-                        "total_records": response.totalRecords,
+                        "total_records": total_records,
                         "page_size": page_size,
-                        "total_pages": response.totalPages,
+                        "total_pages": total_pages,
                         "records": records[:10]  # Limit to first 10 for preview
                     }
                 )
             else:
                 error_msg = "Search failed"
-                if hasattr(response, 'status') and hasattr(response.status, 'statusDetail'):
-                    details = response.status.statusDetail
-                    if details:
-                        error_msg = str(details[0].message if hasattr(details[0], 'message') else details)
+                status = search_result.status if hasattr(search_result, 'status') else None
+                if status and hasattr(status, 'statusDetail') and status.statusDetail:
+                    details = status.statusDetail
+                    error_msg = str(details[0].message if hasattr(details[0], 'message') else details)
                 
                 return LiveAPIResponse(
                     success=False,
