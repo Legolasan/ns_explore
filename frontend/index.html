@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NetSuite SDK Explorer</title>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="app">
+        <!-- Header -->
+        <header class="header">
+            <div class="header-content">
+                <div class="logo">
+                    <span class="logo-icon">◈</span>
+                    <h1>NetSuite SDK Explorer</h1>
+                </div>
+                <div class="header-stats" id="headerStats">
+                    <span class="stat"><span class="stat-value" id="statRecords">--</span> Records</span>
+                    <span class="stat"><span class="stat-value" id="statFields">--</span> Fields</span>
+                    <span class="stat-version" id="statVersion">v2022.1</span>
+                </div>
+            </div>
+        </header>
+
+        <!-- Navigation Tabs -->
+        <nav class="nav-tabs">
+            <button class="nav-tab active" data-tab="records">Record Types</button>
+            <button class="nav-tab" data-tab="fields">Field Search</button>
+            <button class="nav-tab" data-tab="live">Live API Test</button>
+        </nav>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- Record Types Tab -->
+            <section class="tab-content active" id="records-tab">
+                <div class="search-section">
+                    <div class="search-box">
+                        <input type="text" id="recordSearch" placeholder="Search record types (e.g., customer, salesOrder, invoice...)" autocomplete="off">
+                        <span class="search-icon">⌘K</span>
+                    </div>
+                    <div class="filter-pills" id="categoryFilters">
+                        <button class="filter-pill active" data-category="">All</button>
+                    </div>
+                </div>
+                
+                <div class="results-container">
+                    <div class="results-list" id="recordResults">
+                        <!-- Results will be populated here -->
+                    </div>
+                    <div class="detail-panel" id="recordDetail">
+                        <div class="detail-placeholder">
+                            <span class="placeholder-icon">📋</span>
+                            <p>Select a record type to view details</p>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Field Search Tab -->
+            <section class="tab-content" id="fields-tab">
+                <div class="search-section">
+                    <div class="search-box">
+                        <input type="text" id="fieldSearch" placeholder="Search fields across all record types (e.g., entityId, email, subsidiary...)" autocomplete="off">
+                    </div>
+                </div>
+                
+                <div class="field-results" id="fieldResults">
+                    <div class="detail-placeholder">
+                        <span class="placeholder-icon">🔍</span>
+                        <p>Search for a field name to see which record types contain it</p>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Live API Test Tab -->
+            <section class="tab-content" id="live-tab">
+                <div class="live-test-container">
+                    <div class="credentials-panel">
+                        <h3>NetSuite Credentials (TBA)</h3>
+                        <p class="credentials-note">Enter customer's credentials to test live API calls. Credentials are not stored.</p>
+                        
+                        <div class="form-group">
+                            <label>Account ID</label>
+                            <input type="text" id="accountId" placeholder="1234567 or 1234567_SB1">
+                        </div>
+                        <div class="form-group">
+                            <label>Consumer Key</label>
+                            <input type="text" id="consumerKey" placeholder="Consumer Key">
+                        </div>
+                        <div class="form-group">
+                            <label>Consumer Secret</label>
+                            <input type="password" id="consumerSecret" placeholder="Consumer Secret">
+                        </div>
+                        <div class="form-group">
+                            <label>Token ID</label>
+                            <input type="text" id="tokenId" placeholder="Token ID">
+                        </div>
+                        <div class="form-group">
+                            <label>Token Secret</label>
+                            <input type="password" id="tokenSecret" placeholder="Token Secret">
+                        </div>
+                        
+                        <button class="btn btn-primary" id="testConnection">Test Connection</button>
+                        <div class="connection-status" id="connectionStatus"></div>
+                    </div>
+                    
+                    <div class="api-test-panel">
+                        <h3>API Operations</h3>
+                        
+                        <div class="operation-section">
+                            <h4>Get Record</h4>
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label>Record Type</label>
+                                    <input type="text" id="getRecordType" placeholder="e.g., customer">
+                                </div>
+                                <div class="form-group">
+                                    <label>Internal ID</label>
+                                    <input type="text" id="getInternalId" placeholder="e.g., 123">
+                                </div>
+                            </div>
+                            <button class="btn btn-secondary" id="getRecord">Get Record</button>
+                        </div>
+                        
+                        <div class="operation-section">
+                            <h4>Search Records</h4>
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label>Record Type</label>
+                                    <input type="text" id="searchRecordType" placeholder="e.g., customer">
+                                </div>
+                                <div class="form-group">
+                                    <label>Page Size</label>
+                                    <input type="number" id="searchPageSize" value="10" min="1" max="100">
+                                </div>
+                            </div>
+                            <button class="btn btn-secondary" id="searchRecords">Search</button>
+                        </div>
+                        
+                        <div class="api-response" id="apiResponse">
+                            <div class="detail-placeholder">
+                                <span class="placeholder-icon">⚡</span>
+                                <p>API response will appear here</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
