@@ -336,10 +336,16 @@ async def get_connector_usage(
             "fields_extracted": 0
         }
     
-    # Calculate field coverage
+    # Calculate field coverage - only count fields that exist in SDK
     sdk_field_names = {f.name.lower() for f in record_info.fields}
     connector_fields = usage.get("fields_extracted", [])
+    
+    # Match fields: check if field exists in SDK (case-insensitive) or is the special "_class" field
     matched_fields = [f for f in connector_fields if f.lower() in sdk_field_names or f == "_class"]
+    extra_fields = [f for f in connector_fields if f.lower() not in sdk_field_names and f != "_class"]
+    
+    matched_count = len(matched_fields)
+    coverage_percent = round((matched_count / record_info.field_count) * 100, 1) if record_info.field_count > 0 else 0
     
     return {
         "sdk_version": index.version,
@@ -350,9 +356,10 @@ async def get_connector_usage(
         "sdk_class": usage.get("sdk_class"),
         "search_class": usage.get("search_class"),
         "total_sdk_fields": record_info.field_count,
-        "fields_extracted": len(connector_fields),
-        "field_coverage_percent": round((len(connector_fields) / record_info.field_count) * 100, 1) if record_info.field_count > 0 else 0,
-        "extracted_field_names": connector_fields,
+        "fields_extracted": matched_count,
+        "field_coverage_percent": coverage_percent,
+        "extracted_field_names": matched_fields,
+        "extra_connector_fields": extra_fields,  # Fields added by connector not in SDK
         "source_file": usage.get("source_file")
     }
 

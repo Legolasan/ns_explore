@@ -1055,3 +1055,35 @@ body {
     font-family: var(--font-mono);
     color: var(--text-secondary);
 }
+
+/* Extra Connector Fields (not in SDK) */
+.connector-extra-fields {
+    background: var(--bg-tertiary);
+    border-radius: var(--radius);
+    padding: 16px;
+    margin-bottom: 16px;
+    border: 1px dashed var(--border-color);
+}
+
+.connector-extra-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+}
+
+.connector-extra-header h4 {
+    font-size: 14px;
+    color: var(--text-secondary);
+}
+
+.connector-extra-note {
+    font-size: 11px;
+    color: var(--text-muted);
+    font-style: italic;
+}
+
+.connector-field.extra {
+    background: rgba(210, 153, 34, 0.15);
+    color: var(--accent-orange);
+}

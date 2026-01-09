@@ -485,6 +485,20 @@ function renderConnectorUsage(usage, container) {
         `<span class="connector-field">${f}</span>`
     ).join('');
     
+    // Extra connector fields (added by connector, not in SDK)
+    const extraFields = usage.extra_connector_fields || [];
+    const extraFieldsHtml = extraFields.length > 0 
+        ? `<div class="connector-extra-fields">
+             <div class="connector-extra-header">
+                 <h4>Additional Connector Fields (${extraFields.length})</h4>
+                 <span class="connector-extra-note">Added by connector, not in SDK schema</span>
+             </div>
+             <div class="connector-fields-list">
+                 ${extraFields.map(f => `<span class="connector-field extra">${f}</span>`).join('')}
+             </div>
+           </div>`
+        : '';
+    
     container.innerHTML = `
         <div class="connector-used">
             <div class="connector-status">
@@ -520,6 +534,8 @@ function renderConnectorUsage(usage, container) {
                     ${fieldsList || '<span class="connector-no-fields">No field mapping available</span>'}
                 </div>
             </div>
+            
+            ${extraFieldsHtml}
             
             <div class="connector-source">
                 <span class="connector-source-label">Source:</span>
