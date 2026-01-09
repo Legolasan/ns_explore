@@ -79,6 +79,7 @@ async def list_record_types(
                 "category": r.category,
                 "field_count": r.field_count,
                 "has_search": r.has_search,
+                "field_names": [f.name for f in r.fields],  # Include field names for client-side search
             }
             for r in records
         ]

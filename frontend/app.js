@@ -221,7 +221,7 @@ async function loadRecords() {
 }
 
 function filterAndDisplayRecords() {
-    const query = elements.recordSearch.value.toLowerCase();
+    const query = elements.recordSearch.value.toLowerCase().trim();
     
     let filtered = allRecords;
     
@@ -230,12 +230,33 @@ function filterAndDisplayRecords() {
         filtered = filtered.filter(r => r.category === currentCategory);
     }
     
-    // Filter by search query
+    // Filter by search query (record name, class name, OR field names)
     if (query) {
-        filtered = filtered.filter(r => 
-            r.name.toLowerCase().includes(query) ||
-            r.class_name.toLowerCase().includes(query)
-        );
+        filtered = filtered.map(r => {
+            const nameMatch = r.name.toLowerCase().includes(query) || 
+                              r.class_name.toLowerCase().includes(query);
+            
+            // Search through field names
+            const matchingFields = (r.field_names || []).filter(fieldName => 
+                fieldName.toLowerCase().includes(query)
+            );
+            
+            if (nameMatch || matchingFields.length > 0) {
+                return {
+                    ...r,
+                    matchingFields: matchingFields,
+                    matchType: nameMatch ? 'name' : 'field'
+                };
+            }
+            return null;
+        }).filter(Boolean);
+    } else {
+        // No query - reset match info
+        filtered = filtered.map(r => ({
+            ...r,
+            matchingFields: [],
+            matchType: null
+        }));
     }
     
     renderRecordList(filtered);
@@ -252,19 +273,31 @@ function renderRecordList(records) {
         return;
     }
     
-    const html = records.map(record => `
-        <div class="record-item ${selectedRecord === record.name ? 'active' : ''}" 
-             data-record="${record.name}">
-            <div class="record-item-header">
-                <span class="record-name">${record.name}</span>
-                <span class="badge badge-category">${record.category}</span>
+    const html = records.map(record => {
+        // Show matching fields if search matched by field name
+        const matchingFieldsHtml = record.matchingFields && record.matchingFields.length > 0 
+            ? `<div class="matching-fields">
+                 <span class="matching-fields-label">Matched fields:</span>
+                 ${record.matchingFields.slice(0, 5).map(f => `<span class="matched-field">${f}</span>`).join('')}
+                 ${record.matchingFields.length > 5 ? `<span class="matched-field-more">+${record.matchingFields.length - 5} more</span>` : ''}
+               </div>`
+            : '';
+        
+        return `
+            <div class="record-item ${selectedRecord === record.name ? 'active' : ''}" 
+                 data-record="${record.name}">
+                <div class="record-item-header">
+                    <span class="record-name">${record.name}</span>
+                    <span class="badge badge-category">${record.category}</span>
+                </div>
+                <div class="record-meta">
+                    <span>📋 ${record.field_count} fields</span>
+                    ${record.has_search ? '<span class="badge badge-search">searchable</span>' : ''}
+                </div>
+                ${matchingFieldsHtml}
             </div>
-            <div class="record-meta">
-                <span>📋 ${record.field_count} fields</span>
-                ${record.has_search ? '<span class="badge badge-search">searchable</span>' : ''}
-            </div>
-        </div>
-    `).join('');
+        `;
+    }).join('');
     
     elements.recordResults.innerHTML = html;
     
