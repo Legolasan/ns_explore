@@ -1,18 +1,37 @@
 """
 Field Search API endpoints
 """
-from typing import List, Optional
-from fastapi import APIRouter, Query
+from typing import List, Optional, Callable
+from fastapi import APIRouter, Query, HTTPException
 
 from ..services.sdk_indexer import SDKIndexer
 from .records import get_indexer
 
 router = APIRouter(prefix="/fields", tags=["fields"])
 
+# Function to get versioned indexer (set by main.py)
+get_versioned_indexer: Optional[Callable[[Optional[str]], SDKIndexer]] = None
+
+
+def get_indexer_for_version(version: Optional[str] = None) -> SDKIndexer:
+    """Get the SDK indexer instance for a specific version"""
+    global get_versioned_indexer
+    
+    # If version-aware function is available, use it
+    if get_versioned_indexer is not None:
+        try:
+            return get_versioned_indexer(version)
+        except ValueError as e:
+            raise HTTPException(status_code=404, detail=str(e))
+    
+    # Fall back to default
+    return get_indexer(version)
+
 
 @router.get("/search", response_model=dict)
 async def search_fields(
     q: str = Query(..., min_length=1, description="Field name to search"),
+    version: Optional[str] = Query(None, description="SDK version (defaults to latest)"),
     record_type: Optional[str] = Query(None, description="Filter by record type"),
     field_type: Optional[str] = Query(None, description="Filter by field type"),
     limit: int = Query(100, ge=1, le=500, description="Maximum results")
@@ -22,7 +41,8 @@ async def search_fields(
     
     Useful for finding which record types have a specific field.
     """
-    indexer = get_indexer()
+    indexer = get_indexer_for_version(version)
+    index = indexer.get_index()
     results = indexer.search_fields(q)
     
     # Apply filters
@@ -52,6 +72,7 @@ async def search_fields(
         })
     
     return {
+        "sdk_version": index.version,
         "query": q,
         "total_matches": len(results),
         "results": results[:limit],
@@ -61,6 +82,7 @@ async def search_fields(
 
 @router.get("/common", response_model=List[dict])
 async def get_common_fields(
+    version: Optional[str] = Query(None, description="SDK version (defaults to latest)"),
     min_occurrences: int = Query(10, ge=2, description="Minimum occurrences across record types")
 ):
     """
@@ -68,7 +90,7 @@ async def get_common_fields(
     
     Useful for understanding common patterns across the SDK.
     """
-    indexer = get_indexer()
+    indexer = get_indexer_for_version(version)
     index = indexer.get_index()
     
     # Count field occurrences
@@ -101,11 +123,13 @@ async def get_common_fields(
 
 
 @router.get("/types", response_model=List[dict])
-async def get_field_types():
+async def get_field_types(
+    version: Optional[str] = Query(None, description="SDK version (defaults to latest)")
+):
     """
     Get all unique field types in the SDK with counts.
     """
-    indexer = get_indexer()
+    indexer = get_indexer_for_version(version)
     index = indexer.get_index()
     
     type_counts = {}
@@ -122,6 +146,7 @@ async def get_field_types():
 
 @router.get("/record-refs", response_model=List[dict])
 async def get_record_ref_fields(
+    version: Optional[str] = Query(None, description="SDK version (defaults to latest)"),
     ref_type: Optional[str] = Query(None, description="Filter by referenced record type")
 ):
     """
@@ -129,7 +154,7 @@ async def get_record_ref_fields(
     
     Useful for understanding relationships between record types.
     """
-    indexer = get_indexer()
+    indexer = get_indexer_for_version(version)
     index = indexer.get_index()
     
     ref_fields = []

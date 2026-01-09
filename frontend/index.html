@@ -16,10 +16,17 @@
                     <span class="logo-icon">◈</span>
                     <h1>NetSuite SDK Explorer</h1>
                 </div>
-                <div class="header-stats" id="headerStats">
-                    <span class="stat"><span class="stat-value" id="statRecords">--</span> Records</span>
-                    <span class="stat"><span class="stat-value" id="statFields">--</span> Fields</span>
-                    <span class="stat-version" id="statVersion">v2022.1</span>
+                <div class="header-controls">
+                    <div class="version-selector">
+                        <label for="versionSelect">SDK Version:</label>
+                        <select id="versionSelect">
+                            <option value="">Loading...</option>
+                        </select>
+                    </div>
+                    <div class="header-stats" id="headerStats">
+                        <span class="stat"><span class="stat-value" id="statRecords">--</span> Records</span>
+                        <span class="stat"><span class="stat-value" id="statFields">--</span> Fields</span>
+                    </div>
                 </div>
             </div>
         </header>

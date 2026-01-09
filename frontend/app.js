@@ -1,5 +1,6 @@
 /**
  * NetSuite SDK Explorer - Frontend Application
+ * Supports multiple SDK versions
  */
 
 // API Base URL - adjust for production
@@ -12,13 +13,17 @@ let currentCategory = '';
 let selectedRecord = null;
 let allRecords = [];
 let categories = [];
+let currentVersion = null;  // Currently selected SDK version
+let availableVersions = []; // All available SDK versions
 
 // DOM Elements
 const elements = {
+    // Version selector
+    versionSelect: document.getElementById('versionSelect'),
+    
     // Stats
     statRecords: document.getElementById('statRecords'),
     statFields: document.getElementById('statFields'),
-    statVersion: document.getElementById('statVersion'),
     
     // Tabs
     navTabs: document.querySelectorAll('.nav-tab'),
@@ -54,12 +59,70 @@ const elements = {
 // Initialize
 document.addEventListener('DOMContentLoaded', () => {
     initTabs();
-    loadStats();
-    loadCategories();
-    loadRecords();
+    loadVersions();  // Load versions first, then stats and records
     initSearchHandlers();
     initLiveAPIHandlers();
+    initVersionSelector();
 });
+
+// Version Selector
+function initVersionSelector() {
+    elements.versionSelect.addEventListener('change', () => {
+        const selectedVersion = elements.versionSelect.value;
+        if (selectedVersion && selectedVersion !== currentVersion) {
+            currentVersion = selectedVersion;
+            localStorage.setItem('sdkVersion', currentVersion);
+            
+            // Reload data for new version
+            loadStats();
+            loadCategories();
+            loadRecords();
+            
+            // Clear current detail panel
+            elements.recordDetail.innerHTML = `
+                <div class="detail-placeholder">
+                    <span class="placeholder-icon">📋</span>
+                    <p>Select a record type to view details</p>
+                </div>
+            `;
+            selectedRecord = null;
+        }
+    });
+}
+
+// Load available SDK versions
+async function loadVersions() {
+    try {
+        const response = await fetch(`${API_BASE}/versions`);
+        const data = await response.json();
+        
+        availableVersions = data.versions;
+        
+        // Check for saved version preference
+        const savedVersion = localStorage.getItem('sdkVersion');
+        currentVersion = savedVersion && availableVersions.includes(savedVersion) 
+            ? savedVersion 
+            : data.default;
+        
+        // Populate version dropdown
+        elements.versionSelect.innerHTML = availableVersions.map(v => 
+            `<option value="${v}" ${v === currentVersion ? 'selected' : ''}>v${v}</option>`
+        ).join('');
+        
+        // Now load data for current version
+        loadStats();
+        loadCategories();
+        loadRecords();
+    } catch (error) {
+        console.error('Failed to load versions:', error);
+        elements.versionSelect.innerHTML = '<option value="">Error loading versions</option>';
+        
+        // Try to load anyway without version
+        loadStats();
+        loadCategories();
+        loadRecords();
+    }
+}
 
 // Tab Navigation
 function initTabs() {
@@ -77,15 +140,24 @@ function initTabs() {
     });
 }
 
+// Build API URL with version parameter
+function apiUrl(endpoint) {
+    const url = `${API_BASE}${endpoint}`;
+    if (currentVersion) {
+        const separator = url.includes('?') ? '&' : '?';
+        return `${url}${separator}version=${currentVersion}`;
+    }
+    return url;
+}
+
 // Load SDK Stats
 async function loadStats() {
     try {
-        const response = await fetch(`${API_BASE}/stats`);
+        const response = await fetch(apiUrl('/stats'));
         const stats = await response.json();
         
         elements.statRecords.textContent = stats.total_record_types;
         elements.statFields.textContent = stats.total_fields.toLocaleString();
-        elements.statVersion.textContent = `v${stats.sdk_version}`;
     } catch (error) {
         console.error('Failed to load stats:', error);
     }
@@ -94,7 +166,7 @@ async function loadStats() {
 // Load Categories
 async function loadCategories() {
     try {
-        const response = await fetch(`${API_BASE}/records/categories`);
+        const response = await fetch(apiUrl('/records/categories'));
         categories = await response.json();
         
         renderCategoryFilters();
@@ -136,7 +208,7 @@ async function loadRecords() {
     elements.recordResults.innerHTML = '<div class="loading">Loading records</div>';
     
     try {
-        const response = await fetch(`${API_BASE}/records?limit=500`);
+        const response = await fetch(apiUrl('/records?limit=500'));
         const data = await response.json();
         allRecords = data.records;
         
@@ -218,7 +290,7 @@ async function selectRecord(recordName) {
     elements.recordDetail.innerHTML = '<div class="loading">Loading details</div>';
     
     try {
-        const response = await fetch(`${API_BASE}/records/${recordName}`);
+        const response = await fetch(apiUrl(`/records/${recordName}`));
         const record = await response.json();
         
         renderRecordDetail(record);
@@ -247,6 +319,7 @@ function renderRecordDetail(record) {
             <div class="detail-title">${record.name}</div>
             <div class="detail-subtitle">${record.full_class_path}</div>
             <div class="detail-badges">
+                <span class="badge badge-version">SDK v${record.sdk_version}</span>
                 <span class="badge badge-category">${record.category}</span>
                 <span class="badge" style="background: var(--bg-tertiary);">${record.field_count} fields</span>
                 ${record.has_search ? '<span class="badge badge-search">searchable</span>' : ''}
@@ -320,7 +393,7 @@ async function searchFields() {
     elements.fieldResults.innerHTML = '<div class="loading">Searching</div>';
     
     try {
-        const response = await fetch(`${API_BASE}/fields/search?q=${encodeURIComponent(query)}&limit=200`);
+        const response = await fetch(apiUrl(`/fields/search?q=${encodeURIComponent(query)}&limit=200`));
         const data = await response.json();
         
         renderFieldResults(data);
@@ -343,7 +416,8 @@ function renderFieldResults(data) {
     
     const html = `
         <div style="padding: 16px; border-bottom: 1px solid var(--border-color);">
-            <strong>${data.total_matches}</strong> fields found matching "<strong>${data.query}</strong>"
+            <strong>${data.total_matches}</strong> fields found matching "<strong>${data.query}</strong>" 
+            <span class="badge badge-version">SDK v${data.sdk_version}</span>
         </div>
         ${data.results.map(field => `
             <div class="field-result-item">

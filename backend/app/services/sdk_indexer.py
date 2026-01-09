@@ -12,19 +12,21 @@ from ..models.schemas import SDKIndex, RecordTypeInfo, FieldInfo, EnumTypeInfo
 class SDKIndexer:
     """Builds and manages the SDK index"""
     
-    def __init__(self, sdk_path: str, index_path: Optional[str] = None):
+    def __init__(self, sdk_path: str, index_path: Optional[str] = None, version: str = "2022.1"):
         """
         Initialize indexer.
         
         Args:
             sdk_path: Path to the SDK source files
             index_path: Path to save/load the index JSON
+            version: SDK version string (e.g., "2022.1")
         """
         self.sdk_path = sdk_path
-        self.parser = SDKParser(sdk_path)
+        self.version = version
+        self.parser = SDKParser(sdk_path, version=version)
         self.index_path = index_path or os.path.join(
             os.path.dirname(__file__), 
-            "../../data/sdk_index.json"
+            f"../../data/sdk_index_{version}.json"
         )
         self._index: Optional[SDKIndex] = None
         
@@ -38,14 +40,17 @@ class SDKIndexer:
         Returns:
             The complete SDKIndex
         """
-        print("Starting SDK indexing...")
+        print(f"Starting SDK indexing for version {self.version}...")
         
         # Get all record types
         record_types = self.parser.parse_record_types_enum()
         print(f"Found {len(record_types)} record types in RecordType.java")
         
-        index = SDKIndex(version="2022.1")
+        index = SDKIndex(version=self.version)
         total_fields = 0
+        
+        # Version path format for full class path
+        version_path = f"v{self.version.replace('.', '_')}"
         
         for record_name, var_name in record_types.items():
             print(f"Processing: {record_name}")
@@ -82,7 +87,7 @@ class SDKIndexer:
                 
                 # Create record type info
                 class_name = class_file.stem
-                full_path = f"com.netsuite.suitetalk.proxy.v2022_1.{package}.{class_name}"
+                full_path = f"com.netsuite.suitetalk.proxy.{version_path}.{package}.{class_name}"
                 
                 record_info = RecordTypeInfo(
                     name=record_name,
@@ -141,7 +146,7 @@ class SDKIndexer:
             "transactions/sales/types",
         ]
         
-        base_path = Path(self.sdk_path) / "com/netsuite/suitetalk/proxy/v2022_1"
+        base_path = Path(self.sdk_path) / self.parser.base_package
         
         for enum_dir in enum_dirs:
             dir_path = base_path / enum_dir
@@ -294,3 +299,127 @@ class SDKIndexer:
             record for record in index.record_types.values()
             if record.category == category
         ]
+
+
+class MultiVersionIndexer:
+    """Manages multiple SDK version indexes"""
+    
+    def __init__(self, sdk_base_path: str, data_path: str):
+        """
+        Initialize multi-version indexer.
+        
+        Args:
+            sdk_base_path: Path to the sdk/ directory containing version folders
+            data_path: Path to save index files
+        """
+        self.sdk_base_path = Path(sdk_base_path)
+        self.data_path = Path(data_path)
+        self._indexers: Dict[str, SDKIndexer] = {}
+        self._versions: List[str] = []
+    
+    def discover_versions(self) -> List[str]:
+        """
+        Discover available SDK versions by scanning the sdk/ directory.
+        
+        Returns:
+            List of version strings (e.g., ["2022.1", "2023.1"])
+        """
+        versions = []
+        if self.sdk_base_path.exists():
+            for item in self.sdk_base_path.iterdir():
+                if item.is_dir() and not item.name.startswith('.'):
+                    # Check if it looks like a version folder (contains com/netsuite)
+                    if (item / "com" / "netsuite").exists():
+                        versions.append(item.name)
+        
+        self._versions = sorted(versions)
+        return self._versions
+    
+    def build_all_indexes(self) -> Dict[str, SDKIndex]:
+        """
+        Build indexes for all discovered SDK versions.
+        
+        Returns:
+            Dict mapping version to SDKIndex
+        """
+        versions = self.discover_versions()
+        indexes = {}
+        
+        for version in versions:
+            print(f"\n{'='*50}")
+            print(f"Building index for SDK version {version}")
+            print('='*50)
+            
+            sdk_path = self.sdk_base_path / version
+            index_path = self.data_path / f"sdk_index_{version}.json"
+            
+            indexer = SDKIndexer(
+                sdk_path=str(sdk_path),
+                index_path=str(index_path),
+                version=version
+            )
+            
+            indexes[version] = indexer.build_index(save=True)
+            self._indexers[version] = indexer
+        
+        # Save versions manifest
+        self._save_versions_manifest()
+        
+        return indexes
+    
+    def _save_versions_manifest(self):
+        """Save a manifest of all available versions"""
+        manifest = {
+            "versions": self._versions,
+            "default": self._versions[-1] if self._versions else None,
+        }
+        
+        manifest_path = self.data_path / "versions.json"
+        os.makedirs(self.data_path, exist_ok=True)
+        
+        with open(manifest_path, 'w') as f:
+            json.dump(manifest, f, indent=2)
+        
+        print(f"\nVersions manifest saved to {manifest_path}")
+    
+    def load_all_indexes(self) -> Dict[str, SDKIndexer]:
+        """
+        Load all available version indexes.
+        
+        Returns:
+            Dict mapping version to SDKIndexer
+        """
+        # Load versions manifest
+        manifest_path = self.data_path / "versions.json"
+        if manifest_path.exists():
+            with open(manifest_path, 'r') as f:
+                manifest = json.load(f)
+            self._versions = manifest.get("versions", [])
+        else:
+            self._versions = self.discover_versions()
+        
+        # Load each version's index
+        for version in self._versions:
+            index_path = self.data_path / f"sdk_index_{version}.json"
+            if index_path.exists():
+                indexer = SDKIndexer(
+                    sdk_path=str(self.sdk_base_path / version),
+                    index_path=str(index_path),
+                    version=version
+                )
+                indexer.load_index()
+                self._indexers[version] = indexer
+        
+        return self._indexers
+    
+    def get_indexer(self, version: str) -> Optional[SDKIndexer]:
+        """Get indexer for a specific version"""
+        return self._indexers.get(version)
+    
+    def get_versions(self) -> List[str]:
+        """Get list of available versions"""
+        return self._versions
+    
+    def get_default_version(self) -> Optional[str]:
+        """Get the default (latest) version"""
+        return self._versions[-1] if self._versions else None

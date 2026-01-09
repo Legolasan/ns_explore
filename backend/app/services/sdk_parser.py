@@ -56,15 +56,19 @@ class SDKParser:
         "CustomFieldList": "CustomFields",
     }
     
-    def __init__(self, sdk_path: str):
+    def __init__(self, sdk_path: str, version: str = "2022.1"):
         """
-        Initialize parser with SDK source path.
+        Initialize parser with SDK source path and version.
         
         Args:
-            sdk_path: Path to the decompiled SDK source (e.g., /path/to/netsuite-sdk-src)
+            sdk_path: Path to the decompiled SDK source (e.g., /path/to/sdk/2022.1)
+            version: SDK version string (e.g., "2022.1")
         """
         self.sdk_path = Path(sdk_path)
-        self.base_package = "com/netsuite/suitetalk/proxy/v2022_1"
+        self.version = version
+        # Convert version like "2022.1" to path format "v2022_1"
+        version_path = f"v{version.replace('.', '_')}"
+        self.base_package = f"com/netsuite/suitetalk/proxy/{version_path}"
         
     def parse_record_types_enum(self) -> Dict[str, str]:
         """
