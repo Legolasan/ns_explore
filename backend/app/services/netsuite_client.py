@@ -28,11 +28,11 @@ class NetSuiteClient:
     NetSuite SOAP client with TBA authentication
     """
     
-    # NetSuite WSDL URL template
+    # Default WSDL URL template (may not work for all accounts)
     WSDL_URL_TEMPLATE = "https://{account_id}.suitetalk.api.netsuite.com/wsdl/v2022_1_0/netsuite.wsdl"
     
-    # Sandbox URL template
-    SANDBOX_WSDL_TEMPLATE = "https://{account_id}.suitetalk.api.netsuite.com/wsdl/v2022_1_0/netsuite.wsdl"
+    # Data center discovery endpoint
+    DATACENTER_URLS_ENDPOINT = "https://rest.netsuite.com/rest/datacenterurls?account={account_id}"
     
     def __init__(
         self,
@@ -40,7 +40,8 @@ class NetSuiteClient:
         consumer_key: str,
         consumer_secret: str,
         token_id: str,
-        token_secret: str
+        token_secret: str,
+        soap_endpoint: Optional[str] = None
     ):
         """
         Initialize NetSuite client with TBA credentials.
@@ -51,21 +52,67 @@ class NetSuiteClient:
             consumer_secret: Integration consumer secret
             token_id: Token ID
             token_secret: Token secret
+            soap_endpoint: Optional custom SOAP endpoint URL (e.g., "https://1234567.suitetalk.api.netsuite.com")
         """
         self.account_id = account_id.replace("_", "-").upper()
         self.consumer_key = consumer_key
         self.consumer_secret = consumer_secret
         self.token_id = token_id
         self.token_secret = token_secret
+        self.soap_endpoint = soap_endpoint
         
         self._client = None
         self._history = None
+        self._discovered_endpoint = None
         
     def _get_wsdl_url(self) -> str:
         """Get the WSDL URL for this account"""
-        # Clean account ID for URL
+        # If custom endpoint provided, use it
+        if self.soap_endpoint:
+            endpoint = self.soap_endpoint.rstrip('/')
+            return f"{endpoint}/wsdl/v2022_1_0/netsuite.wsdl"
+        
+        # If we've discovered an endpoint, use it
+        if self._discovered_endpoint:
+            return f"{self._discovered_endpoint}/wsdl/v2022_1_0/netsuite.wsdl"
+        
+        # Try to discover the data center URL
+        discovered = self._discover_datacenter_url()
+        if discovered:
+            self._discovered_endpoint = discovered
+            return f"{discovered}/wsdl/v2022_1_0/netsuite.wsdl"
+        
+        # Fall back to default template
         account_url = self.account_id.lower().replace("_", "-")
         return f"https://{account_url}.suitetalk.api.netsuite.com/wsdl/v2022_1_0/netsuite.wsdl"
+    
+    def _discover_datacenter_url(self) -> Optional[str]:
+        """
+        Discover the account-specific data center URL using NetSuite's REST endpoint.
+        
+        Returns the webservices URL if found, None otherwise.
+        """
+        try:
+            import requests
+            
+            # Clean account ID for the API call
+            account_for_api = self.account_id.replace("-", "_").upper()
+            url = self.DATACENTER_URLS_ENDPOINT.format(account_id=account_for_api)
+            
+            response = requests.get(url, timeout=10)
+            if response.status_code == 200:
+                data = response.json()
+                # The response contains various URLs, we need webservicesDomain
+                if 'webservicesDomain' in data:
+                    return data['webservicesDomain']
+                # Also try suitetalkDomain for newer API
+                if 'dataCenterUrls' in data and 'suitetalkDomain' in data['dataCenterUrls']:
+                    return data['dataCenterUrls']['suitetalkDomain']
+        except Exception as e:
+            # Log but don't fail - will fall back to default
+            print(f"Data center discovery failed: {e}")
+        
+        return None
     
     def _generate_nonce(self, length: int = 20) -> str:
         """Generate a random nonce"""

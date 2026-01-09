@@ -113,6 +113,18 @@
                             <input type="password" id="tokenSecret" placeholder="Token Secret">
                         </div>
                         
+                        <div class="form-group endpoint-group">
+                            <label>
+                                SOAP Endpoint URL 
+                                <span class="optional-badge">Optional</span>
+                            </label>
+                            <input type="text" id="soapEndpoint" placeholder="https://1234567.suitetalk.api.netsuite.com">
+                            <span class="field-hint">
+                                Required if you see "account-specific domains" error. 
+                                Find it in NetSuite: Setup → Company → Company Information → Company URLs tab.
+                            </span>
+                        </div>
+                        
                         <button class="btn btn-primary" id="testConnection">Test Connection</button>
                         <div class="connection-status" id="connectionStatus"></div>
                     </div>

@@ -74,6 +74,10 @@ class NetSuiteCredentials(BaseModel):
     consumer_secret: str = Field(..., description="Integration Consumer Secret")
     token_id: str = Field(..., description="Token ID")
     token_secret: str = Field(..., description="Token Secret")
+    soap_endpoint: Optional[str] = Field(
+        None, 
+        description="Account-specific SOAP endpoint URL (e.g., https://1234567.suitetalk.api.netsuite.com). If not provided, will attempt to auto-detect."
+    )
 
 
 class ConnectionTestResult(BaseModel):

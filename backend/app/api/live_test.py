@@ -22,6 +22,7 @@ async def test_connection(credentials: NetSuiteCredentials):
     Test connection to a customer's NetSuite instance.
     
     Uses the provided TBA credentials to make a getServerTime call.
+    If the account requires account-specific domains, provide the soap_endpoint.
     """
     try:
         client = NetSuiteClient(
@@ -29,7 +30,8 @@ async def test_connection(credentials: NetSuiteCredentials):
             consumer_key=credentials.consumer_key,
             consumer_secret=credentials.consumer_secret,
             token_id=credentials.token_id,
-            token_secret=credentials.token_secret
+            token_secret=credentials.token_secret,
+            soap_endpoint=credentials.soap_endpoint
         )
         
         result = client.test_connection()
@@ -63,7 +65,8 @@ async def get_record(request: GetRecordRequest):
             consumer_key=request.credentials.consumer_key,
             consumer_secret=request.credentials.consumer_secret,
             token_id=request.credentials.token_id,
-            token_secret=request.credentials.token_secret
+            token_secret=request.credentials.token_secret,
+            soap_endpoint=request.credentials.soap_endpoint
         )
         
         result = client.get_record(
@@ -95,7 +98,8 @@ async def search_records(request: SearchRecordRequest):
             consumer_key=request.credentials.consumer_key,
             consumer_secret=request.credentials.consumer_secret,
             token_id=request.credentials.token_id,
-            token_secret=request.credentials.token_secret
+            token_secret=request.credentials.token_secret,
+            soap_endpoint=request.credentials.soap_endpoint
         )
         
         result = client.search_records(

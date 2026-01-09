@@ -47,6 +47,7 @@ const elements = {
     consumerSecret: document.getElementById('consumerSecret'),
     tokenId: document.getElementById('tokenId'),
     tokenSecret: document.getElementById('tokenSecret'),
+    soapEndpoint: document.getElementById('soapEndpoint'),
     testConnection: document.getElementById('testConnection'),
     connectionStatus: document.getElementById('connectionStatus'),
     getRecordType: document.getElementById('getRecordType'),
@@ -663,12 +664,14 @@ function initLiveAPIHandlers() {
 }
 
 function getCredentials() {
+    const soapEndpoint = elements.soapEndpoint?.value?.trim();
     return {
         account_id: elements.accountId.value.trim(),
         consumer_key: elements.consumerKey.value.trim(),
         consumer_secret: elements.consumerSecret.value.trim(),
         token_id: elements.tokenId.value.trim(),
-        token_secret: elements.tokenSecret.value.trim()
+        token_secret: elements.tokenSecret.value.trim(),
+        soap_endpoint: soapEndpoint || null
     };
 }
 
