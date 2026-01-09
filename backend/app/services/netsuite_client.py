@@ -1,6 +1,8 @@
 """
 NetSuite SOAP Client for live API testing
 Uses zeep library to make SOAP calls with TBA authentication
+
+Signature generation matches the NetSuite SDK's TbaUtils.java implementation.
 """
 import hashlib
 import hmac
@@ -8,6 +10,7 @@ import time
 import base64
 import random
 import string
+import urllib.parse
 from typing import Optional, Dict, Any
 from datetime import datetime
 
@@ -25,7 +28,12 @@ from ..models.schemas import ConnectionTestResult, LiveAPIResponse
 
 class NetSuiteClient:
     """
-    NetSuite SOAP client with TBA authentication
+    NetSuite SOAP client with TBA authentication.
+    
+    Signature generation follows the NetSuite SDK TbaUtils.java implementation exactly:
+    - Base string: URL-encoded account&consumerKey&token&nonce&timestamp
+    - Key: percentEncode(consumerSecret)&percentEncode(tokenSecret)
+    - Signature: HMAC-SHA256, Base64 encoded
     """
     
     # Default WSDL URL template (may not work for all accounts)
@@ -54,7 +62,12 @@ class NetSuiteClient:
             token_secret: Token secret
             soap_endpoint: Optional custom SOAP endpoint URL (e.g., "https://1234567.suitetalk.api.netsuite.com")
         """
-        self.account_id = account_id.replace("_", "-").upper()
+        # Store ORIGINAL account ID for signature (NetSuite SDK uses it as-is)
+        self.account_id = account_id
+        
+        # For URL construction, convert to lowercase and replace underscores with dashes
+        self.account_id_for_url = account_id.lower().replace("_", "-")
+        
         self.consumer_key = consumer_key
         self.consumer_secret = consumer_secret
         self.token_id = token_id
@@ -65,6 +78,26 @@ class NetSuiteClient:
         self._history = None
         self._discovered_endpoint = None
         
+    def _percent_encode(self, s: str) -> str:
+        """
+        Percent encode a string exactly like NetSuite SDK's TbaUtils.percentEncode().
+        
+        URLEncoder.encode() with UTF-8, then:
+        - Replace '+' with '%20'
+        - Replace '*' with '%2A'
+        - Replace '%7E' with '~'
+        """
+        # URL encode with UTF-8
+        encoded = urllib.parse.quote(s, safe='')
+        # Apply NetSuite-specific replacements
+        encoded = encoded.replace('+', '%20')
+        # Note: urllib.parse.quote doesn't encode '*', so we need to do it
+        encoded = encoded.replace('*', '%2A')
+        # The tilde should NOT be encoded per RFC 3986, but URLEncoder encodes it
+        # Then NetSuite replaces %7E back to ~
+        # Since Python's quote doesn't encode ~, we're fine
+        return encoded
+    
     def _get_wsdl_url(self) -> str:
         """Get the WSDL URL for this account"""
         # If custom endpoint provided, use it
@@ -82,9 +115,8 @@ class NetSuiteClient:
             self._discovered_endpoint = discovered
             return f"{discovered}/wsdl/v2022_1_0/netsuite.wsdl"
         
-        # Fall back to default template
-        account_url = self.account_id.lower().replace("_", "-")
-        return f"https://{account_url}.suitetalk.api.netsuite.com/wsdl/v2022_1_0/netsuite.wsdl"
+        # Fall back to default template using URL-formatted account ID
+        return f"https://{self.account_id_for_url}.suitetalk.api.netsuite.com/wsdl/v2022_1_0/netsuite.wsdl"
     
     def _discover_datacenter_url(self) -> Optional[str]:
         """
@@ -95,13 +127,15 @@ class NetSuiteClient:
         try:
             from requests import get as requests_get
             
-            # Clean account ID for the API call
-            account_for_api = self.account_id.replace("-", "_").upper()
-            url = self.DATACENTER_URLS_ENDPOINT.format(account_id=account_for_api)
+            # Use the original account ID (with underscore, uppercase) for the API call
+            # NetSuite expects account ID in format like "1234567" or "1234567_SB1"
+            url = self.DATACENTER_URLS_ENDPOINT.format(account_id=self.account_id)
+            print(f"DEBUG - Discovering data center for account: {self.account_id}")
             
             response = requests_get(url, timeout=10)
             if response.status_code == 200:
                 data = response.json()
+                print(f"DEBUG - Data center response: {data}")
                 # The response contains various URLs, we need webservicesDomain
                 if 'webservicesDomain' in data:
                     return data['webservicesDomain']
@@ -123,19 +157,28 @@ class NetSuiteClient:
         """
         Generate HMAC-SHA256 signature for TBA.
         
-        The base string format is: account&consumerKey&token&nonce&timestamp
+        Matches NetSuite SDK TbaUtils.java exactly:
+        - Base string: URL-encoded account&consumerKey&token&nonce&timestamp
+        - Key: percentEncode(consumerSecret)&percentEncode(tokenSecret)
         """
-        # Create the base string
+        # Create the base string with URL-encoded parameters (like SDK does)
+        # SDK uses URLEncoder.encode() on each parameter
         base_string = "&".join([
-            self.account_id,
-            self.consumer_key,
-            self.token_id,
-            nonce,
-            str(timestamp)
+            urllib.parse.quote(self.account_id, safe=''),
+            urllib.parse.quote(self.consumer_key, safe=''),
+            urllib.parse.quote(self.token_id, safe=''),
+            urllib.parse.quote(nonce, safe=''),
+            urllib.parse.quote(str(timestamp), safe='')
         ])
         
-        # Create the signing key
-        key = "&".join([self.consumer_secret, self.token_secret])
+        # Create the signing key with percent-encoded secrets (like SDK's getKey())
+        key = "&".join([
+            self._percent_encode(self.consumer_secret),
+            self._percent_encode(self.token_secret)
+        ])
+        
+        print(f"DEBUG - Base string: {base_string}")
+        print(f"DEBUG - Key length: {len(key)}")
         
         # Generate HMAC-SHA256 signature
         signature = hmac.new(
@@ -174,9 +217,8 @@ class NetSuiteClient:
         if self._discovered_endpoint:
             return f"{self._discovered_endpoint}/services/NetSuitePort_2022_1"
         
-        # Fall back to default
-        account_url = self.account_id.lower().replace("_", "-")
-        return f"https://{account_url}.suitetalk.api.netsuite.com/services/NetSuitePort_2022_1"
+        # Fall back to default using URL-formatted account ID
+        return f"https://{self.account_id_for_url}.suitetalk.api.netsuite.com/services/NetSuitePort_2022_1"
     
     def _get_client(self):
         """Get or create the SOAP client"""
