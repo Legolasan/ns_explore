@@ -16,6 +16,20 @@ from ..services.netsuite_client import NetSuiteClient
 router = APIRouter(prefix="/live", tags=["live-api"])
 
 
+@router.get("/health")
+async def health_check():
+    """
+    Quick health check for the Live API service.
+    Returns info about SOAP client availability.
+    """
+    from ..services.netsuite_client import ZEEP_AVAILABLE
+    return {
+        "status": "ok",
+        "zeep_available": ZEEP_AVAILABLE,
+        "message": "Live API service is running" if ZEEP_AVAILABLE else "zeep library not available - live testing disabled"
+    }
+
+
 @router.post("/test-connection", response_model=ConnectionTestResult)
 async def test_connection(credentials: NetSuiteCredentials):
     """
