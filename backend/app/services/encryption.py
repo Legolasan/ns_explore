@@ -16,18 +16,22 @@ class EncryptionService:
     Encryption service for protecting sensitive credentials in API requests.
     
     Uses Fernet (AES-128-CBC with HMAC) for symmetric encryption.
-    The key is derived from a secret and salt, regenerated on each server restart.
+    The key is derived from a static secret to ensure consistency across restarts.
     """
     
+    # Static salt for consistent key derivation across server restarts
+    # This ensures the same key is generated each time
+    STATIC_SALT = b'NetSuiteSDKExpl!'  # 16 bytes
+    
     def __init__(self):
-        # Generate a random secret for this server instance
-        # This means encrypted values are only valid for this server session
-        self._secret = os.environ.get('ENCRYPTION_SECRET', os.urandom(32).hex())
-        self._salt = os.urandom(16)
+        # Use environment variable or default secret
+        # The key will be consistent across server restarts
+        self._secret = os.environ.get('ENCRYPTION_SECRET', 'netsuite-sdk-explorer-default-key-2024')
+        self._salt = self.STATIC_SALT
         self._fernet = self._create_fernet()
         
         # Generate a simple identifier clients can use to verify key compatibility
-        self._key_id = hashlib.sha256(self._salt).hexdigest()[:16]
+        self._key_id = hashlib.sha256(self._salt + self._secret.encode()).hexdigest()[:16]
     
     def _create_fernet(self) -> Fernet:
         """Create a Fernet instance with derived key."""
