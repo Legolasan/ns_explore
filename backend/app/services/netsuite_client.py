@@ -304,8 +304,27 @@ class NetSuiteClient:
                 # Make the call
                 response = service.getServerTime(_soapheaders={"tokenPassport": passport})
                 
-                if hasattr(response, 'status') and response.status.isSuccess:
-                    server_time = str(response.serverTime) if hasattr(response, 'serverTime') else None
+                # Parse the response - structure is response.body.getServerTimeResult
+                # or sometimes response directly has the result
+                result = None
+                if hasattr(response, 'body') and hasattr(response.body, 'getServerTimeResult'):
+                    result = response.body.getServerTimeResult
+                elif hasattr(response, 'getServerTimeResult'):
+                    result = response.getServerTimeResult
+                else:
+                    result = response
+                
+                # Check if successful
+                is_success = False
+                server_time = None
+                
+                if result:
+                    if hasattr(result, 'status') and hasattr(result.status, 'isSuccess'):
+                        is_success = result.status.isSuccess
+                    if hasattr(result, 'serverTime'):
+                        server_time = str(result.serverTime)
+                
+                if is_success:
                     return ConnectionTestResult(
                         success=True,
                         message="Connection successful!",
@@ -313,9 +332,15 @@ class NetSuiteClient:
                         account_info={"account_id": self.account_id}
                     )
                 else:
+                    # Try to extract error message
+                    error_msg = "Connection failed - check credentials"
+                    if result and hasattr(result, 'status') and hasattr(result.status, 'statusDetail'):
+                        details = result.status.statusDetail
+                        if details:
+                            error_msg = str(details[0].message if hasattr(details[0], 'message') else details[0])
                     return ConnectionTestResult(
                         success=False,
-                        message="Connection failed - check credentials",
+                        message=error_msg,
                         server_time=None,
                         account_info=None
                     )
