@@ -20,5 +20,8 @@ anthropic==0.40.0
 # CORS support
 python-dotenv==1.0.0
 
+# Encryption for credential security
+cryptography==42.0.0
+
 # For Railway deployment
 gunicorn==21.2.0

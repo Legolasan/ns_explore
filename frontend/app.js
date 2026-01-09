@@ -60,12 +60,12 @@ const elements = {
 };
 
 // Initialize
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
     initTabs();
     loadVersions();  // Load versions first, then stats and records
     loadConnectorStats(); // Load connector usage stats
     initSearchHandlers();
-    initLiveAPIHandlers();
+    await initLiveAPIHandlers();  // Async to fetch encryption key
     initVersionSelector();
 });
 
@@ -657,20 +657,63 @@ function selectRecordFromField(recordName) {
 }
 
 // Live API Handlers
-function initLiveAPIHandlers() {
+let encryptionKey = null;
+
+async function initLiveAPIHandlers() {
+    // Fetch encryption key on init
+    await fetchEncryptionKey();
+    
     elements.testConnection.addEventListener('click', testConnection);
     elements.getRecord.addEventListener('click', getRecord);
     elements.searchRecords.addEventListener('click', searchRecordsAPI);
 }
 
+async function fetchEncryptionKey() {
+    try {
+        const response = await fetch(`${API_BASE}/live/encryption-key`);
+        const data = await response.json();
+        encryptionKey = data.key;
+        console.log('Encryption key loaded');
+    } catch (error) {
+        console.warn('Failed to load encryption key, credentials will be sent as-is:', error);
+    }
+}
+
+function xorEncrypt(text, key) {
+    // Decode base64 key to bytes
+    const keyBytes = atob(key);
+    const textBytes = new TextEncoder().encode(text);
+    
+    // XOR each byte
+    const encrypted = new Uint8Array(textBytes.length);
+    for (let i = 0; i < textBytes.length; i++) {
+        encrypted[i] = textBytes[i] ^ keyBytes.charCodeAt(i % keyBytes.length);
+    }
+    
+    // Return base64 encoded result
+    return btoa(String.fromCharCode(...encrypted));
+}
+
 function getCredentials() {
     const soapEndpoint = elements.soapEndpoint?.value?.trim();
+    const consumerSecret = elements.consumerSecret.value.trim();
+    const tokenSecret = elements.tokenSecret.value.trim();
+    
+    // Encrypt sensitive fields if encryption key is available
+    let encryptedConsumerSecret = consumerSecret;
+    let encryptedTokenSecret = tokenSecret;
+    
+    if (encryptionKey && consumerSecret && tokenSecret) {
+        encryptedConsumerSecret = xorEncrypt(consumerSecret, encryptionKey);
+        encryptedTokenSecret = xorEncrypt(tokenSecret, encryptionKey);
+    }
+    
     return {
         account_id: elements.accountId.value.trim(),
         consumer_key: elements.consumerKey.value.trim(),
-        consumer_secret: elements.consumerSecret.value.trim(),
+        consumer_secret: encryptedConsumerSecret,
         token_id: elements.tokenId.value.trim(),
-        token_secret: elements.tokenSecret.value.trim(),
+        token_secret: encryptedTokenSecret,
         soap_endpoint: soapEndpoint || null
     };
 }

@@ -1,5 +1,9 @@
 """
 Live API Testing endpoints for testing against customer NetSuite instances
+
+Sensitive credentials (consumer_secret, token_secret) are encrypted client-side
+before transmission to prevent them from appearing in plain text in browser
+network inspection tools.
 """
 from typing import Optional
 from fastapi import APIRouter, HTTPException
@@ -12,8 +16,33 @@ from ..models.schemas import (
     LiveAPIResponse
 )
 from ..services.netsuite_client import NetSuiteClient
+from ..services.encryption import get_encryption_service
 
 router = APIRouter(prefix="/live", tags=["live-api"])
+
+
+def decrypt_credentials(credentials: NetSuiteCredentials) -> NetSuiteCredentials:
+    """Decrypt sensitive fields in credentials if they are encrypted."""
+    encryption = get_encryption_service()
+    decrypted = encryption.decrypt_credentials(credentials.model_dump())
+    return NetSuiteCredentials(**decrypted)
+
+
+@router.get("/encryption-key")
+async def get_encryption_key():
+    """
+    Get the encryption key for client-side credential encryption.
+    
+    Returns a key that the client uses to encrypt sensitive fields
+    (consumer_secret, token_secret) before sending them.
+    """
+    encryption = get_encryption_service()
+    return {
+        "key": encryption.client_key,
+        "key_id": encryption.key_id,
+        "algorithm": "xor-base64",
+        "sensitive_fields": ["consumer_secret", "token_secret"]
+    }
 
 
 @router.get("/health")
@@ -37,22 +66,28 @@ async def test_connection(credentials: NetSuiteCredentials):
     
     Uses the provided TBA credentials to make a getServerTime call.
     If the account requires account-specific domains, provide the soap_endpoint.
+    
+    Sensitive fields (consumer_secret, token_secret) should be encrypted
+    client-side using the key from /encryption-key endpoint.
     """
     import traceback
     
     try:
+        # Decrypt credentials if encrypted
+        decrypted_creds = decrypt_credentials(credentials)
+        
         # Log the attempt (without secrets)
-        print(f"Testing connection for account: {credentials.account_id}")
-        if credentials.soap_endpoint:
-            print(f"Using custom endpoint: {credentials.soap_endpoint}")
+        print(f"Testing connection for account: {decrypted_creds.account_id}")
+        if decrypted_creds.soap_endpoint:
+            print(f"Using custom endpoint: {decrypted_creds.soap_endpoint}")
         
         client = NetSuiteClient(
-            account_id=credentials.account_id,
-            consumer_key=credentials.consumer_key,
-            consumer_secret=credentials.consumer_secret,
-            token_id=credentials.token_id,
-            token_secret=credentials.token_secret,
-            soap_endpoint=credentials.soap_endpoint
+            account_id=decrypted_creds.account_id,
+            consumer_key=decrypted_creds.consumer_key,
+            consumer_secret=decrypted_creds.consumer_secret,
+            token_id=decrypted_creds.token_id,
+            token_secret=decrypted_creds.token_secret,
+            soap_endpoint=decrypted_creds.soap_endpoint
         )
         
         result = client.test_connection()
@@ -82,6 +117,7 @@ async def get_record(request: GetRecordRequest):
     Fetch a specific record from customer's NetSuite.
     
     Requires either internal_id or external_id.
+    Sensitive fields should be encrypted client-side.
     """
     if not request.internal_id and not request.external_id:
         raise HTTPException(
@@ -90,13 +126,16 @@ async def get_record(request: GetRecordRequest):
         )
     
     try:
+        # Decrypt credentials if encrypted
+        decrypted_creds = decrypt_credentials(request.credentials)
+        
         client = NetSuiteClient(
-            account_id=request.credentials.account_id,
-            consumer_key=request.credentials.consumer_key,
-            consumer_secret=request.credentials.consumer_secret,
-            token_id=request.credentials.token_id,
-            token_secret=request.credentials.token_secret,
-            soap_endpoint=request.credentials.soap_endpoint
+            account_id=decrypted_creds.account_id,
+            consumer_key=decrypted_creds.consumer_key,
+            consumer_secret=decrypted_creds.consumer_secret,
+            token_id=decrypted_creds.token_id,
+            token_secret=decrypted_creds.token_secret,
+            soap_endpoint=decrypted_creds.soap_endpoint
         )
         
         result = client.get_record(
@@ -121,15 +160,19 @@ async def search_records(request: SearchRecordRequest):
     Search for records in customer's NetSuite.
     
     Performs a basic search with optional filters.
+    Sensitive fields should be encrypted client-side.
     """
     try:
+        # Decrypt credentials if encrypted
+        decrypted_creds = decrypt_credentials(request.credentials)
+        
         client = NetSuiteClient(
-            account_id=request.credentials.account_id,
-            consumer_key=request.credentials.consumer_key,
-            consumer_secret=request.credentials.consumer_secret,
-            token_id=request.credentials.token_id,
-            token_secret=request.credentials.token_secret,
-            soap_endpoint=request.credentials.soap_endpoint
+            account_id=decrypted_creds.account_id,
+            consumer_key=decrypted_creds.consumer_key,
+            consumer_secret=decrypted_creds.consumer_secret,
+            token_id=decrypted_creds.token_id,
+            token_secret=decrypted_creds.token_secret,
+            soap_endpoint=decrypted_creds.soap_endpoint
         )
         
         result = client.search_records(
