@@ -24,7 +24,14 @@ async def test_connection(credentials: NetSuiteCredentials):
     Uses the provided TBA credentials to make a getServerTime call.
     If the account requires account-specific domains, provide the soap_endpoint.
     """
+    import traceback
+    
     try:
+        # Log the attempt (without secrets)
+        print(f"Testing connection for account: {credentials.account_id}")
+        if credentials.soap_endpoint:
+            print(f"Using custom endpoint: {credentials.soap_endpoint}")
+        
         client = NetSuiteClient(
             account_id=credentials.account_id,
             consumer_key=credentials.consumer_key,
@@ -37,12 +44,21 @@ async def test_connection(credentials: NetSuiteCredentials):
         result = client.test_connection()
         return result
         
+    except ImportError as e:
+        return ConnectionTestResult(
+            success=False,
+            message=f"Missing dependency: {str(e)}",
+            server_time=None,
+            account_info=None
+        )
     except Exception as e:
+        error_detail = traceback.format_exc()
+        print(f"Connection test error: {error_detail}")
         return ConnectionTestResult(
             success=False,
             message=f"Connection failed: {str(e)}",
             server_time=None,
-            account_info=None
+            account_info={"error_detail": str(e)[:500]}
         )
 
 

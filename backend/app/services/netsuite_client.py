@@ -93,13 +93,13 @@ class NetSuiteClient:
         Returns the webservices URL if found, None otherwise.
         """
         try:
-            import requests
+            from requests import get as requests_get
             
             # Clean account ID for the API call
             account_for_api = self.account_id.replace("-", "_").upper()
             url = self.DATACENTER_URLS_ENDPOINT.format(account_id=account_for_api)
             
-            response = requests.get(url, timeout=10)
+            response = requests_get(url, timeout=10)
             if response.status_code == 200:
                 data = response.json()
                 # The response contains various URLs, we need webservicesDomain
@@ -174,18 +174,26 @@ class NetSuiteClient:
             )
         
         if self._client is None:
-            self._history = HistoryPlugin()
-            session = Session()
-            transport = Transport(session=session, timeout=60)
-            settings = Settings(strict=False, xml_huge_tree=True)
-            
-            wsdl_url = self._get_wsdl_url()
-            self._client = Client(
-                wsdl_url,
-                transport=transport,
-                settings=settings,
-                plugins=[self._history]
-            )
+            try:
+                self._history = HistoryPlugin()
+                session = Session()
+                # Increase timeout for WSDL download (can be slow)
+                transport = Transport(session=session, timeout=120, operation_timeout=60)
+                settings = Settings(strict=False, xml_huge_tree=True)
+                
+                wsdl_url = self._get_wsdl_url()
+                print(f"Loading WSDL from: {wsdl_url}")
+                
+                self._client = Client(
+                    wsdl_url,
+                    transport=transport,
+                    settings=settings,
+                    plugins=[self._history]
+                )
+                print("WSDL loaded successfully")
+            except Exception as e:
+                print(f"Failed to create SOAP client: {e}")
+                raise
         
         return self._client
     
