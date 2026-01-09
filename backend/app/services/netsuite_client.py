@@ -563,12 +563,13 @@ class NetSuiteClient:
                 error_details=str(e)
             )
     
-    def _serialize_response(self, obj, max_depth: int = 3, current_depth: int = 0) -> Any:
+    def _serialize_response(self, obj, max_depth: int = 5, current_depth: int = 0) -> Any:
         """
         Serialize a SOAP response object to a dict.
+        Handles zeep CompoundValue objects specially.
         """
         if current_depth >= max_depth:
-            return str(obj)
+            return str(obj) if obj is not None else None
         
         if obj is None:
             return None
@@ -582,11 +583,33 @@ class NetSuiteClient:
         if isinstance(obj, list):
             return [self._serialize_response(item, max_depth, current_depth + 1) for item in obj[:20]]
         
+        # Handle zeep CompoundValue objects (they have __iter__ but aren't regular dicts)
+        if hasattr(obj, '__iter__') and hasattr(obj, '__getitem__'):
+            try:
+                # Try to iterate as dict-like (zeep objects support this)
+                result = {}
+                for key in obj:
+                    try:
+                        value = obj[key]
+                        result[key] = self._serialize_response(value, max_depth, current_depth + 1)
+                    except:
+                        pass
+                if result:
+                    return result
+            except:
+                pass
+        
+        # Fallback: Try __dict__ for regular Python objects
         if hasattr(obj, '__dict__'):
             result = {}
             for key, value in obj.__dict__.items():
                 if not key.startswith('_'):
                     result[key] = self._serialize_response(value, max_depth, current_depth + 1)
-            return result
+            if result:
+                return result
         
-        return str(obj)
+        # Last resort: try to convert to dict if possible
+        try:
+            return dict(obj)
+        except:
+            return str(obj) if obj is not None else None
