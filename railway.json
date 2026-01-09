@@ -5,6 +5,7 @@
         "buildCommand": "pip install -r requirements.txt && python scripts/build_all_indexes.py"
     },
     "deploy": {
+        "startCommand": "python start.py",
         "numReplicas": 1,
         "sleepApplication": false,
         "restartPolicyType": "ON_FAILURE",
